@@ -1,0 +1,89 @@
+
+import numpy as np
+
+class CategoricalPolicy:
+    """
+    Simple linear policy for discrete actions.
+    π_θ(a|s) = softmax(W @ s + b)
+    """
+    def __init__(self, state_dim, action_dim):
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        
+        # Parameters: W (action_dim x state_dim) + b (action_dim)
+        self.W_size = state_dim * action_dim
+        self.b_size = action_dim
+        self.param_size = self.W_size + self.b_size
+        self.theta = None
+        
+    def set_weights(self, theta):
+        """Set policy parameters."""
+        assert len(theta) == self.param_size
+        self.theta = theta
+        
+    def _get_W_b(self, theta):
+        """Extract W and b from flattened theta."""
+        W = theta[:self.W_size].reshape(self.action_dim, self.state_dim)
+        b = theta[self.W_size:]
+        return W, b
+    
+    def _forward(self, state, theta):
+        """Compute logits = W @ s + b."""
+        W, b = self._get_W_b(theta)
+        return W @ state + b
+    
+    def sample_action(self, state):
+        """Sample action from π(·|state)."""
+        logits = self._forward(state, self.theta)
+        
+        # Softmax with numerical stability
+        exp_logits = np.exp(logits - np.max(logits))
+        probs = exp_logits / exp_logits.sum()
+        
+        return np.random.choice(self.action_dim, p=probs)
+    
+    def log_prob(self, state, action, theta):
+        """Compute log π_θ(action|state)."""
+        logits = self._forward(state, theta)
+        
+        # Log-softmax
+        log_probs = logits - np.log(np.sum(np.exp(logits)))
+        return log_probs[action]
+    
+    def log_prob_gradient(self, state, action, theta):
+        """
+        Compute ∇_θ log π_θ(action|state).
+        
+        For categorical policy:
+        ∇ log π(a|s) = ∇ logits[a] - Σ_a' π(a'|s) ∇ logits[a']
+        """
+        logits = self._forward(state, theta)
+        
+        # Compute probabilities
+        exp_logits = np.exp(logits - np.max(logits))
+        probs = exp_logits / exp_logits.sum()
+        
+        # Gradient of log softmax
+        grad = np.zeros(self.param_size)
+        
+        # ∇_W log π(action|state)
+        # = (1 - π(action|state)) * s  if a == action
+        # = -π(a|state) * s            otherwise
+        W_grad = np.zeros((self.action_dim, self.state_dim))
+        for a in range(self.action_dim):
+            if a == action:
+                W_grad[a] = (1 - probs[a]) * state
+            else:
+                W_grad[a] = -probs[a] * state
+        
+        grad[:self.W_size] = W_grad.flatten()
+        
+        # ∇_b log π(action|state)
+        # = e_action - probs
+        b_grad = np.zeros(self.action_dim)
+        b_grad[action] = 1.0
+        b_grad -= probs
+        
+        grad[self.W_size:] = b_grad
+        
+        return grad

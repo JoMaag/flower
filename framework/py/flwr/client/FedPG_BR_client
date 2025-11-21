@@ -10,89 +10,72 @@ from flwr.common import (
 )
 
 class FedPGClient(NumPyClient):
-    """
-    Minimal template for a FedPG-BR RL client.
-
-    Users should implement:
-    - sample_trajectory(): sample a trajectory from their environment
-    - compute_gradient(): compute policy gradient for a trajectory
-    """
-
-    def __init__(self, policy):
-        """
-        Args:
-            policy: Your RL policy object. Must have get_weights() and set_weights().
-        """
-        self.policy = policy
-
-    def get_parameters(self, config: dict[str, Scalar]) -> list[np.ndarray]:
-        """
-        Return the current local model parameters.
-
-        Parameters
-        ----------
-        config : dict[str, Scalar]
-            Configuration parameters requested by the server. Can be ignored or used
-            to decide which parameters to return.
-
-        Returns
-        -------
-        parameters : list[np.ndarray]
-            The local model parameters as a list of NumPy arrays.
-        """
-        # Ignore config if not needed
-        _ = config
-
-        # Return current policy parameters as a list of NumPy arrays
-        return [self.policy.get_weights()]
+    def __init__(self, env, policy_network, cid: str):
+        self.env = env
+        self.policy = policy_network
+        self.cid = cid
 
     def fit(self, parameters, config):
         """
-        FedPG-BR client update.
-
-        Args:
-            parameters: Global parameters θ₀ᵗ (list of NumPy arrays)
-            config: Dict containing "Bt" (batch size) and optionally other hyperparams
-
-        Returns:
-            - Updated gradient μₜ^(k) as list of NumPy arrays
-            - Number of trajectories used
-            - Optional metrics dict
+        Client only does lines 5-6:
+        - Sample B_t trajectories
+        - Compute gradient μ^{(k)}_t
         """
-        # Load global parameters
-        self.policy.set_weights(parameters[0])
-
-        Bt = int(config.get("Bt", 32))
-
-        # 1. Sample Bt trajectories
-        trajectories = [self.sample_trajectory() for _ in range(Bt)]
-
-        # 2. Compute gradients for each trajectory
-        grads = [self.compute_gradient(tau) for tau in trajectories]
-
-        # 3. Average to get μₜ^(k)
-        mu_k = np.mean(grads, axis=0)
-
-        # Return as Flower expects: list of ndarrays
+        theta_t0 = parameters[0]
+        Bt = config["Bt"]
+        
+        # Line 5: Sample trajectories
+        trajectories = [
+            self._sample_trajectory(theta_t0) 
+            for _ in range(Bt)
+        ]
+        
+        # Line 6: Compute gradient
+        mu_k = self._compute_batch_gradient(trajectories, theta_t0)
+        
+        # Return gradient to server
         return [mu_k], len(trajectories), {}
-
-    def evaluate(self, parameters, config):
-        """Optional evaluation; can return dummy values"""
-        return 0.0, 0, {}
-
-    # ----------------------
-    # User must implement these
-    # ----------------------
-    def sample_trajectory(self):
-        """
-        Sample a trajectory from your environment using the current policy.
-        Must return a trajectory object suitable for compute_gradient().
-        """
-        raise NotImplementedError("Users must implement sample_trajectory()")
-
-    def compute_gradient(self, trajectory):
-        """
-        Compute policy gradient (REINFORCE/GPOMDP) for a single trajectory.
-        Must return a NumPy array representing the gradient.
-        """
-        raise NotImplementedError("Users must implement compute_gradient()")
+    
+    def _sample_trajectory(self, theta):
+        """Sample trajectory from client's MDP."""
+        self.policy.set_weights(theta)
+        
+        states, actions, rewards = [], [], []
+        state = self.env.reset()
+        done = False
+        
+        while not done:
+            action = self.policy.sample_action(state)
+            next_state, reward, done, _ = self.env.step(action)
+            states.append(state)
+            actions.append(action)
+            rewards.append(reward)
+            state = next_state
+        
+        return {'states': states, 'actions': actions, 'rewards': rewards}
+    
+    def _compute_batch_gradient(self, trajectories, theta):
+        """μ = (1/B_t) Σ g(τ_i|θ)."""
+        grads = [self._compute_gradient(tau, theta) for tau in trajectories]
+        return np.mean(grads, axis=0)
+    
+    def _compute_gradient(self, trajectory, theta):
+        """REINFORCE gradient estimator."""
+        states = trajectory['states']
+        actions = trajectory['actions']
+        rewards = trajectory['rewards']
+        
+        # Returns
+        gamma = 0.99
+        returns = []
+        G = 0
+        for r in reversed(rewards):
+            G = r + gamma * G
+            returns.insert(0, G)
+        
+        # Gradient
+        grad = np.zeros_like(theta)
+        for s, a, G in zip(states, actions, returns):
+            grad += self.policy.log_prob_gradient(s, a, theta) * G
+        
+        return grad / len(states)
