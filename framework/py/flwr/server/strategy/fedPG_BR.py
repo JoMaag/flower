@@ -31,23 +31,35 @@ class fedPG_BR(Strategy):
         self.mu_t = None
 
     def sample_trajectory(self, theta: np.ndarray):
-        """
-        Sample trajectory from SERVER'S MDP using policy θ.
-        """
+        """Sample trajectory from SERVER'S MDP using policy θ."""
         self.policy.set_weights(theta)
         
         states, actions, rewards = [], [], []
-        state = self.env.reset()
+        
+        # ✅ Handle both Gym APIs
+        reset_result = self.env.reset()
+        state = reset_result[0] if isinstance(reset_result, tuple) else reset_result
         done = False
         
-        while not done:
+        max_steps = 1000  # safety limit
+        steps = 0
+        
+        while not done and steps < max_steps:
             action = self.policy.sample_action(state)
-            next_state, reward, done, _ = self.env.step(action)
+            
+            # ✅ Handle both step APIs
+            step_result = self.env.step(action)
+            if len(step_result) == 5:  # New Gym API
+                next_state, reward, terminated, truncated, info = step_result
+                done = terminated or truncated
+            else:  # Old Gym API
+                next_state, reward, done, info = step_result
             
             states.append(state)
             actions.append(action)
             rewards.append(reward)
             state = next_state
+            steps += 1
         
         return {
             'states': states,
