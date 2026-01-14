@@ -1,187 +1,301 @@
+# policy_network.py - PYTORCH VERSION
+# pyright: reportGeneralTypeIssues=false
+# type: ignore
+import torch
+import torch.nn as nn
+from torch.distributions import Categorical, Normal
 import numpy as np
 
-class CategoricalPolicy:
+
+class CategoricalPolicy(nn.Module):
     """
-    Simple linear policy for discrete action spaces (like CartPole).
+    Linear policy for discrete action spaces (like CartPole).
     π_θ(a|s) = softmax(W @ s + b)
     
-    Parameters:
-        θ = [W.flatten(), b]
-        W: (action_dim, state_dim)
-        b: (action_dim,)
+    Uses PyTorch nn.Linear for automatic gradient computation.
     """
     
     def __init__(self, state_dim, action_dim):
+        super().__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
         
-        # Parameter dimensions
-        self.W_size = state_dim * action_dim
-        self.b_size = action_dim
-        self.param_size = self.W_size + self.b_size
+        # Linear layer: y = Wx + b
+        self.linear = nn.Linear(state_dim, action_dim)
         
-        self.theta = None
+        # Initialize like paper code
+        self._init_weights()
     
-    def set_weights(self, theta):
-        """Set policy parameters θ."""
-        assert len(theta) == self.param_size, \
-            f"Expected {self.param_size} params, got {len(theta)}"
-        self.theta = theta.copy()
+    def _init_weights(self):
+        """Initialize weights uniformly (like paper)."""
+        for param in self.parameters():
+            stdv = 1. / np.sqrt(param.size(-1))
+            param.data.uniform_(-stdv, stdv)
     
-    def _get_W_b(self, theta):
-        """Extract W and b from flattened θ."""
-        W = theta[:self.W_size].reshape(self.action_dim, self.state_dim)
-        b = theta[self.W_size:]
-        return W, b
+    @property
+    def param_size(self):
+        """Total number of parameters."""
+        return sum(p.numel() for p in self.parameters())
     
-    def _compute_logits(self, state, theta):
-        """Compute action logits: W @ s + b."""
-        W, b = self._get_W_b(theta)
-        return W @ state + b
-    
-    def _softmax(self, logits):
-        """Numerically stable softmax."""
-        exp_logits = np.exp(logits - np.max(logits))
-        return exp_logits / exp_logits.sum()
+    def forward(self, state, sample=True, fixed_action=None):
+        """
+        Compute action and log probability.
+        
+        Args:
+            state: observation (numpy or torch tensor)
+            sample: if True, sample action; else take argmax
+            fixed_action: if given, compute log prob for this action
+        
+        Returns:
+            action (int), log_prob (torch.Tensor)
+        """
+        # Convert to tensor if needed
+        if not isinstance(state, torch.Tensor):
+            state = torch.as_tensor(state, dtype=torch.float32)
+        
+        # Ensure 1D
+        state = state.view(-1)
+        
+        # Compute logits
+        logits = self.linear(state)
+        
+        # Create categorical distribution
+        policy = Categorical(logits=logits)
+        
+        # Get action
+        if fixed_action is not None:
+            action = torch.tensor(fixed_action, dtype=torch.long)
+        elif sample:
+            action = policy.sample()
+        else:
+            action = policy.probs.argmax()
+        
+        # Compute log probability
+        log_prob = policy.log_prob(action)
+        
+        return action.item(), log_prob
     
     def sample_action(self, state):
-        """Sample action from π(·|state)."""
-        logits = self._compute_logits(state, self.theta)
-        probs = self._softmax(logits)
-        return np.random.choice(self.action_dim, p=probs)
+        """Sample action from π(·|state). Returns int."""
+        with torch.no_grad():
+            action, _ = self.forward(state, sample=True)
+        return action
     
-    def log_prob(self, state, action, theta):
-        """Compute log π_θ(action|state)."""
-        logits = self._compute_logits(state, theta)
-        # Log-softmax: log(exp(x_i) / sum(exp(x_j))) = x_i - log(sum(exp(x_j)))
-        log_sum_exp = np.log(np.sum(np.exp(logits)))
-        return logits[action] - log_sum_exp
-    
-    def log_prob_gradient(self, state, action, theta):
+    def log_prob(self, state, action, theta=None):
         """
-        Compute ∇_θ log π_θ(action|state).
+        Compute log π_θ(action|state).
         
-        For categorical policy with softmax:
-        ∇ log π(a|s) = ∇ logits[a] - Σ_a' π(a'|s) ∇ logits[a']
+        Args:
+            state: observation
+            action: action taken
+            theta: optional parameters (if None, use current)
         
-        For linear policy (logits = Ws + b):
-        ∇_W logits[a] = e_a ⊗ s  (outer product)
-        ∇_b logits[a] = e_a
-        
-        Where e_a is one-hot vector for action a.
+        Returns:
+            log_prob (torch.Tensor)
         """
-        logits = self._compute_logits(state, theta)
-        probs = self._softmax(logits)
+        if theta is not None:
+            # Temporarily set weights
+            old_params = self.get_weights()
+            self.set_weights(theta)
         
-        # Initialize gradient
-        grad = np.zeros(self.param_size)
+        if not isinstance(state, torch.Tensor):
+            state = torch.as_tensor(state, dtype=torch.float32)
         
-        # ∇_W log π(action|state)
-        # For each action a', compute contribution to gradient
-        W_grad = np.zeros((self.action_dim, self.state_dim))
+        state = state.view(-1)
+        logits = self.linear(state)
+        policy = Categorical(logits=logits)
         
-        for a in range(self.action_dim):
-            if a == action:
-                # ∇_W logits[action] with weight (1 - π(action|s))
-                W_grad[a] = (1 - probs[a]) * state
-            else:
-                # ∇_W logits[a] with weight (-π(a|s))
-                W_grad[a] = -probs[a] * state
+        if not isinstance(action, torch.Tensor):
+            action = torch.tensor(action, dtype=torch.long)
         
-        # Flatten W gradient
-        grad[:self.W_size] = W_grad.flatten()
+        log_prob = policy.log_prob(action)
         
-        # ∇_b log π(action|state)
-        # = e_action - probs
-        b_grad = np.zeros(self.action_dim)
-        b_grad[action] = 1.0
-        b_grad -= probs
+        if theta is not None:
+            # Restore weights
+            self.set_weights(old_params)
         
-        grad[self.W_size:] = b_grad
-        
-        return grad
-
-
-class GaussianPolicy:
-    """
-    Gaussian policy for continuous action spaces (like HalfCheetah).
-    π_θ(a|s) = N(μ_θ(s), σ²)
-    
-    μ_θ(s) = W @ s + b
-    σ is fixed
-    
-    Parameters:
-        θ = [W.flatten(), b]
-    """
-    
-    def __init__(self, state_dim, action_dim, log_std=-0.5):
-        self.state_dim = state_dim
-        self.action_dim = action_dim
-        self.log_std = log_std
-        self.std = np.exp(log_std)
-        
-        # Parameter dimensions
-        self.W_size = state_dim * action_dim
-        self.b_size = action_dim
-        self.param_size = self.W_size + self.b_size
-        
-        self.theta = None
-    
-    def set_weights(self, theta):
-        """Set policy parameters θ."""
-        assert len(theta) == self.param_size
-        self.theta = theta.copy()
-    
-    def _get_W_b(self, theta):
-        """Extract W and b from flattened θ."""
-        W = theta[:self.W_size].reshape(self.action_dim, self.state_dim)
-        b = theta[self.W_size:]
-        return W, b
-    
-    def _compute_mean(self, state, theta):
-        """Compute mean action: μ = W @ s + b."""
-        W, b = self._get_W_b(theta)
-        return W @ state + b
-    
-    def sample_action(self, state):
-        """Sample action from π(·|state) = N(μ(s), σ²)."""
-        mean = self._compute_mean(state, self.theta)
-        return mean + self.std * np.random.randn(self.action_dim)
-    
-    def log_prob(self, state, action, theta):
-        """Compute log π_θ(action|state)."""
-        mean = self._compute_mean(state, theta)
-        # Log probability of Gaussian
-        # log N(a|μ,σ²) = -0.5 * [(a-μ)²/σ² + log(2πσ²)]
-        diff = action - mean
-        log_prob = -0.5 * (
-            np.sum((diff / self.std) ** 2) +
-            self.action_dim * np.log(2 * np.pi * self.std ** 2)
-        )
         return log_prob
     
     def log_prob_gradient(self, state, action, theta):
         """
         Compute ∇_θ log π_θ(action|state).
         
-        ∇ log π(a|s) = ∇μ_θ(s) * (a - μ_θ(s)) / σ²
+        PyTorch computes this automatically via backprop!
         
-        For linear mean: μ = Ws + b
-        ∇_W μ = I ⊗ s  (for each output dimension)
-        ∇_b μ = I
+        Returns:
+            gradient (numpy array, flattened)
         """
-        mean = self._compute_mean(state, theta)
-        diff = (action - mean) / (self.std ** 2)
+        # Set parameters
+        self.set_weights(theta)
+        self.zero_grad()
         
-        # Initialize gradient
-        grad = np.zeros(self.param_size)
+        # Compute log prob
+        log_p = self.log_prob(state, action)
         
-        # ∇_W log π(a|s)
-        # For each action dimension i: ∇_W[i,:] = diff[i] * s
-        W_grad = np.outer(diff, state)
-        grad[:self.W_size] = W_grad.flatten()
+        # Backprop to get gradient
+        log_p.backward()
         
-        # ∇_b log π(a|s) = diff
-        grad[self.W_size:] = diff
+        # Extract gradient
+        grad = torch.cat([
+            p.grad.flatten() if p.grad is not None 
+            else torch.zeros_like(p.flatten())
+            for p in self.parameters()
+        ])
         
-        return grad
+        return grad.detach().numpy()
+    
+    def get_weights(self):
+        """Get flattened parameters as numpy array."""
+        return torch.cat([
+            p.flatten() for p in self.parameters()
+        ]).detach().numpy()
+    
+    def set_weights(self, theta):
+        """Set parameters from flattened array."""
+        if isinstance(theta, np.ndarray):
+            theta = torch.from_numpy(theta).float()
+        
+        idx = 0
+        for p in self.parameters():
+            numel = p.numel()
+            p.data = theta[idx:idx+numel].view(p.shape)
+            idx += numel
+
+
+class GaussianPolicy(nn.Module):
+    """
+    Gaussian policy for continuous action spaces (like HalfCheetah).
+    π_θ(a|s) = N(μ_θ(s), σ²)
+    
+    μ_θ(s) = W @ s + b
+    """
+    
+    def __init__(self, state_dim, action_dim, log_std=-0.5):
+        super().__init__()
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        
+        # Mean network
+        self.linear = nn.Linear(state_dim, action_dim)
+        
+        # Fixed log std (not learned)
+        self.log_std = torch.tensor(log_std)
+        self.std = torch.exp(self.log_std)
+        
+        # Initialize
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initialize weights uniformly."""
+        for param in self.parameters():
+            stdv = 1. / np.sqrt(param.size(-1))
+            param.data.uniform_(-stdv, stdv)
+    
+    @property
+    def param_size(self):
+        """Total number of parameters."""
+        return sum(p.numel() for p in self.parameters())
+    
+    def forward(self, state, sample=True, fixed_action=None):
+        """
+        Compute action and log probability.
+        
+        Returns:
+            action (numpy array), log_prob (torch.Tensor)
+        """
+        if not isinstance(state, torch.Tensor):
+            state = torch.as_tensor(state, dtype=torch.float32)
+        
+        state = state.view(-1)
+        
+        # Compute mean
+        mean = self.linear(state)
+        
+        # Create Gaussian distribution
+        policy = Normal(mean, self.std)
+        
+        # Get action
+        if fixed_action is not None:
+            if not isinstance(fixed_action, torch.Tensor):
+                action = torch.as_tensor(fixed_action, dtype=torch.float32)
+            else:
+                action = fixed_action
+        elif sample:
+            action = policy.sample()
+        else:
+            action = mean.detach()
+        
+        # Compute log probability
+        log_prob = policy.log_prob(action).sum()  # Sum over action dims
+        
+        return action.detach().numpy(), log_prob
+    
+    def sample_action(self, state):
+        """Sample action from π(·|state). Returns numpy array."""
+        with torch.no_grad():
+            action, _ = self.forward(state, sample=True)
+        return action
+    
+    def log_prob(self, state, action, theta=None):
+        """
+        Compute log π_θ(action|state).
+        
+        Returns:
+            log_prob (torch.Tensor, scalar)
+        """
+        if theta is not None:
+            old_params = self.get_weights()
+            self.set_weights(theta)
+        
+        if not isinstance(state, torch.Tensor):
+            state = torch.as_tensor(state, dtype=torch.float32)
+        if not isinstance(action, torch.Tensor):
+            action = torch.as_tensor(action, dtype=torch.float32)
+        
+        state = state.view(-1)
+        mean = self.linear(state)
+        policy = Normal(mean, self.std)
+        log_prob = policy.log_prob(action).sum()
+        
+        if theta is not None:
+            self.set_weights(old_params)
+        
+        return log_prob
+    
+    def log_prob_gradient(self, state, action, theta):
+        """
+        Compute ∇_θ log π_θ(action|state).
+        
+        Returns:
+            gradient (numpy array, flattened)
+        """
+        self.set_weights(theta)
+        self.zero_grad()
+        
+        log_p = self.log_prob(state, action)
+        log_p.backward()
+        
+        grad = torch.cat([
+            p.grad.flatten() if p.grad is not None 
+            else torch.zeros_like(p.flatten())
+            for p in self.parameters()
+        ])
+        
+        return grad.detach().numpy()
+    
+    def get_weights(self):
+        """Get flattened parameters as numpy array."""
+        return torch.cat([
+            p.flatten() for p in self.parameters()
+        ]).detach().numpy()
+    
+    def set_weights(self, theta):
+        """Set parameters from flattened array."""
+        if isinstance(theta, np.ndarray):
+            theta = torch.from_numpy(theta).float()
+        
+        idx = 0
+        for p in self.parameters():
+            numel = p.numel()
+            p.data = theta[idx:idx+numel].view(p.shape)
+            idx += numel

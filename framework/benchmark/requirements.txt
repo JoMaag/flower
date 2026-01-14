@@ -1,0 +1,23 @@
+# FedPG-BR Benchmark Requirements
+
+# Flower for federated learning
+flwr>=1.6.0
+flwr-datasets>=0.0.2
+
+# Deep Learning
+torch>=1.12.0
+numpy>=1.21.0
+
+# Reinforcement Learning
+gym>=0.26.0
+
+# Utilities
+tqdm>=4.65.0
+
+# Optional: For advanced RL environments
+# gym[box2d]>=0.26.0  # For LunarLander
+# mujoco>=2.3.0  # For HalfCheetah (requires license)
+
+# Optional: For logging and visualization
+tensorboard>=2.11.0
+matplotlib>=3.5.0
