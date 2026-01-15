@@ -100,6 +100,7 @@ def run_single_seed(opts, run_id: int, tb_writer=None):
     num_byzantine = opts.num_Byzantine if opts.num_Byzantine > 0 else 0
     byzantine_ratio = num_byzantine / opts.num_worker if opts.num_worker > 0 else 0.0
     
+   # Create client factory
     # Create client factory
     client_fn = create_client_fn(
         env_name=opts.env_name,
@@ -108,7 +109,13 @@ def run_single_seed(opts, run_id: int, tb_writer=None):
         num_byzantine=num_byzantine,
         attack_type=opts.attack_type,
         gamma=config.gamma,
-        variance_bound=config.sigma
+        variance_bound=config.sigma,
+        # **KORRIGIERT: Fehlende Parameter aus config**
+        hidden_units=','.join(map(str, config.hidden_units)),  # (64, 64) -> '64,64'
+        activation=config.activation,
+        output_activation=config.output_activation,
+        max_epi_len=config.max_epi_len,
+        device=str(opts.device)
     )
     
     # Create strategy with adaptive batch size sampling
@@ -144,7 +151,7 @@ def run_single_seed(opts, run_id: int, tb_writer=None):
     
     # Configure client resources
     client_resources = {
-        "num_cpus": 1,
+        "num_cpus": 4,
         "num_gpus": 0.0
     }
     

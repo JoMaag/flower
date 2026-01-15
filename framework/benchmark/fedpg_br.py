@@ -135,70 +135,86 @@ def sample_trajectory(env: gym.Env, policy: PolicyNetwork, max_steps: int = 1000
     return buffer, total_reward
 
 
-def compute_gpomdp_gradient(trajectory: TrajectoryBuffer, policy: PolicyNetwork, 
-                           gamma: float, baseline: float = 0.0) -> torch.Tensor:
+def compute_returns(trajectory: TrajectoryBuffer, gamma: float) -> torch.Tensor:
     """
-    Compute GPOMDP gradient estimator g(tau|theta)
-    
-    GPOMDP from paper:
-    g(tau|theta) = sum_{h=0}^{H-1} [sum_{t=0}^h grad_theta log pi_theta(a_t|s_t)] * (gamma^h * r(s_h, a_h) - C_b_h)
+    Compute discounted returns with reward-to-go
+    Returns: tensor of shape [trajectory_length] with normalized advantages
     """
-    policy.zero_grad()
-    gradient = None
+    rewards = trajectory.rewards
+    returns = []
+    R = 0.0
     
-    H = len(trajectory)
-    cumulative_log_prob_grad = None
+    # Compute returns in reverse order
+    for r in reversed(rewards):
+        R = r + gamma * R
+        returns.insert(0, R)
     
-    for h in range(H):
-        # Compute gradient of log pi_theta(a_h | s_h)
-        state = torch.FloatTensor(trajectory.states[h]).unsqueeze(0)
-        action_probs = policy(state)
-        action_dist = torch.distributions.Categorical(action_probs)
-        action = torch.tensor([trajectory.actions[h]])
-        log_prob = action_dist.log_prob(action)
-        
-        # Accumulate log probability gradients
-        log_prob.backward(retain_graph=True)
-        if cumulative_log_prob_grad is None:
-            cumulative_log_prob_grad = torch.cat([p.grad.flatten().clone() for p in policy.parameters()])
-        else:
-            current_grad = torch.cat([p.grad.flatten() for p in policy.parameters()])
-            cumulative_log_prob_grad = cumulative_log_prob_grad + current_grad
-        policy.zero_grad()
-        
-        # Compute advantage: gamma^h * r(s_h, a_h) - baseline
-        advantage = (gamma ** h) * trajectory.rewards[h] - baseline
-        
-        # Accumulate gradient
-        if gradient is None:
-            gradient = advantage * cumulative_log_prob_grad.clone()
-        else:
-            gradient += advantage * cumulative_log_prob_grad.clone()
+    returns = torch.FloatTensor(returns)
     
-    return gradient
+    # Normalize returns (advantage estimation)
+    if len(returns) > 1:
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+    
+    return returns
 
 
-def compute_importance_weight(trajectory: TrajectoryBuffer, policy_n: PolicyNetwork, 
-                              policy_0: PolicyNetwork) -> float:
+def compute_policy_gradient(trajectory: TrajectoryBuffer, policy: PolicyNetwork, 
+                           gamma: float, returns: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Compute importance weight omega(tau | theta_n, theta_0) = p(tau|theta_0) / p(tau|theta_n)
-    """
-    log_prob_0 = 0.0
-    log_prob_n = 0.0
+    Compute policy gradient using the policy gradient theorem
     
+    Returns: (gradient_vector, log_probs_tensor)
+    
+    This matches Betreuer's approach:
+    - Compute log_probs for all timesteps
+    - Weight by returns/advantages
+    - Backpropagate to get gradients
+    """
+    if returns is None:
+        returns = compute_returns(trajectory, gamma)
+    
+    # Compute log probabilities for the trajectory
+    log_probs = []
     for state, action in zip(trajectory.states, trajectory.actions):
         state_tensor = torch.FloatTensor(state).unsqueeze(0)
-        
-        with torch.no_grad():
-            probs_0 = policy_0(state_tensor)
-            probs_n = policy_n(state_tensor)
-            
-        log_prob_0 += torch.log(probs_0[0, action] + 1e-8).item()
-        log_prob_n += torch.log(probs_n[0, action] + 1e-8).item()
+        action_probs = policy(state_tensor)
+        action_dist = torch.distributions.Categorical(action_probs)
+        action_tensor = torch.tensor([action])
+        log_prob = action_dist.log_prob(action_tensor)
+        log_probs.append(log_prob)
     
-    # omega = p(tau|theta_0) / p(tau|theta_n) = exp(log_prob_0 - log_prob_n)
-    omega = np.exp(log_prob_0 - log_prob_n)
-    return omega
+    log_probs = torch.stack(log_probs)
+    
+    # Compute weighted loss
+    loss = -(log_probs * returns).mean()
+    
+    # Backpropagate to get gradients
+    policy.zero_grad()
+    loss.backward()
+    
+    # Extract gradient as flattened vector
+    gradient = torch.cat([p.grad.flatten().clone() for p in policy.parameters()])
+    
+    return gradient, log_probs
+
+
+def compute_log_probs_fixed_actions(trajectory: TrajectoryBuffer, policy: PolicyNetwork) -> torch.Tensor:
+    """
+    Compute log probabilities for a trajectory with FIXED actions
+    
+    This is the KEY function for importance sampling!
+    We evaluate policy_0 on the SAME actions that were taken by policy_n
+    """
+    log_probs = []
+    for state, action in zip(trajectory.states, trajectory.actions):
+        state_tensor = torch.FloatTensor(state).unsqueeze(0)
+        action_probs = policy(state_tensor)
+        action_dist = torch.distributions.Categorical(action_probs)
+        action_tensor = torch.tensor([action])
+        log_prob = action_dist.log_prob(action_tensor)
+        log_probs.append(log_prob)
+    
+    return torch.stack(log_probs)
 
 
 class ByzantineFilter:
@@ -236,8 +252,12 @@ class ByzantineFilter:
             G_t = self._apply_filtering_rule(gradients, 2 * self.sigma)
         
         # Aggregate gradients from good agents
-        good_gradients = [gradients[i] for i in G_t]
-        aggregated = torch.mean(torch.stack(good_gradients), dim=0)
+        if len(G_t) > 0:
+            good_gradients = [gradients[i] for i in G_t]
+            aggregated = torch.mean(torch.stack(good_gradients), dim=0)
+        else:
+            # Fallback: use mean of all gradients
+            aggregated = torch.mean(torch.stack(gradients), dim=0)
         
         return aggregated, G_t
     
@@ -291,7 +311,7 @@ class ByzantineFilter:
 
 class FedPGBR:
     """
-    Main implementation of Algorithm 1: FedPG-BR
+    CORRECTED: Main implementation of Algorithm 1: FedPG-BR
     Federated Policy Gradient with Byzantine Resilience
     """
     def __init__(self, env_fn: Callable, config: FedPGConfig, state_dim: int, action_dim: int):
@@ -327,6 +347,7 @@ class FedPGBR:
         
         print(f"Starting FedPG-BR training: {T} rounds, {self.config.num_agents} agents")
         print(f"Byzantine ratio: {self.config.byzantine_ratio:.2%}")
+        print(f"Batch size: B={B_t}, mini-batch: b={b_t}")
         
         for t in range(1, T + 1):
             # Line 3: theta_t_0 <- theta_tilde_{t-1}
@@ -343,19 +364,36 @@ class FedPGBR:
             mu_t, good_agents = self.byzantine_filter.aggregate(agent_gradients, B_t)
             
             # Line 8: Sample number of steps N_t from geometric distribution
-            p_geom = B_t / (B_t + b_t)
+            # Note: np.random.geometric expects p = probability of success
+            # Paper uses: N_t ~ Geom(B/(B+b))
+            # Betreuer uses: p = 1 - B/(B+b) which is correct for numpy
+            p_geom = 1 - B_t / (B_t + b_t)
             N_t = np.random.geometric(p_geom)
             
-            # Lines 9-12: SCSG inner loop
+            # Lines 9-12: SCSG inner loop with CORRECTED importance sampling
             theta_t_n = theta_t_0.clone()
+            
+            # Store theta_0 policy for importance sampling
+            policy_0 = PolicyNetwork(self.state_dim, self.action_dim)
+            policy_0.set_parameters(theta_t_0)
+            
+            actual_steps = 0
             for n in range(N_t):
-                # Line 10: Sample mini-batch trajectories at server
-                v_t_n = self._compute_semi_stochastic_gradient(
-                    theta_t_n, theta_t_0, mu_t, b_t, gamma
+                # Line 10-11: Compute semi-stochastic gradient
+                v_t_n, ratio_mean = self._compute_semi_stochastic_gradient_corrected(
+                    theta_t_n, policy_0, mu_t, b_t, gamma
                 )
+                
+                # CRITICAL: Early stopping if importance ratios diverge
+                # Matches Betreuer's code (lines ~295-297)
+                if abs(ratio_mean) < 0.995 or abs(ratio_mean) > 1.005:
+                    print(f"  Round {t}, Step {n}: Early stop (ratio={ratio_mean:.4f})")
+                    actual_steps = n
+                    break
                 
                 # Line 12: Update policy
                 theta_t_n = theta_t_n + eta_t * v_t_n
+                actual_steps = n + 1
             
             # Line 13: Update server snapshot
             self.theta_tilde.append(theta_t_n)
@@ -367,8 +405,10 @@ class FedPGBR:
                 self.stats['round'].append(t)
                 self.stats['avg_reward'].append(avg_reward)
                 self.stats['num_good_agents'].append(len(good_agents))
+                self.stats['actual_N_t'].append(actual_steps)
                 print(f"Round {t}/{T}: Avg Reward = {avg_reward:.2f}, "
-                      f"Good Agents = {len(good_agents)}/{self.config.num_agents}")
+                      f"Good Agents = {len(good_agents)}/{self.config.num_agents}, "
+                      f"N_t = {actual_steps}/{N_t}")
         
         # Line 14: Return uniformly random snapshot
         idx = np.random.randint(1, len(self.theta_tilde))
@@ -397,7 +437,7 @@ class FedPGBR:
         for _ in range(B_t):
             env = self.env_fn()
             trajectory, _ = sample_trajectory(env, self.server_policy)
-            grad = compute_gpomdp_gradient(trajectory, self.server_policy, gamma)
+            grad, _ = compute_policy_gradient(trajectory, self.server_policy, gamma)
             gradients.append(grad)
             env.close()
         
@@ -414,47 +454,79 @@ class FedPGBR:
         param_dim = len(theta_t_0)
         return torch.randn(param_dim) * self.config.variance_bound * 10
     
-    def _compute_semi_stochastic_gradient(self, theta_t_n: torch.Tensor, theta_t_0: torch.Tensor,
-                                         mu_t: torch.Tensor, b_t: int, gamma: float) -> torch.Tensor:
+    def _compute_semi_stochastic_gradient_corrected(
+        self, 
+        theta_t_n: torch.Tensor, 
+        policy_0: PolicyNetwork,
+        mu_t: torch.Tensor, 
+        b_t: int, 
+        gamma: float
+    ) -> Tuple[torch.Tensor, float]:
         """
-        Compute semi-stochastic gradient (Line 11 of Algorithm 1)
+        CORRECTED: Compute semi-stochastic gradient (Line 11 of Algorithm 1)
         
-        v_t_n = (1/b_t) * sum_j [g(tau_j|theta_n) - omega(tau_j|theta_n, theta_0) * g(tau_j|theta_0)] + mu_t
+        This matches Betreuer's approach:
+        v_t_n = grad_new - grad_old + mu_t
+        
+        where:
+        - grad_new: gradient computed with policy_n on trajectories from policy_n
+        - grad_old: gradient computed with policy_0 on SAME trajectories (fixed actions!)
+                    weighted by importance ratios
+        
+        Returns: (v_t_n, mean_ratio) for early stopping check
         """
-        # Create policies for theta_n and theta_0
+        # Create policy for theta_n
         policy_n = PolicyNetwork(self.state_dim, self.action_dim)
         policy_n.set_parameters(theta_t_n)
         
-        policy_0 = PolicyNetwork(self.state_dim, self.action_dim)
-        policy_0.set_parameters(theta_t_0)
+        all_grad_new = []
+        all_grad_old = []
+        all_ratios = []
         
-        corrections = []
         for _ in range(b_t):
             env = self.env_fn()
             
-            # Sample trajectory using theta_n
+            # Step 1: Sample trajectory using policy_n
             trajectory, _ = sample_trajectory(env, policy_n)
             
-            # Compute g(tau|theta_n)
-            g_theta_n = compute_gpomdp_gradient(trajectory, policy_n, gamma)
+            # Step 2: Compute returns for this trajectory
+            returns = compute_returns(trajectory, gamma)
             
-            # Compute importance weight omega(tau|theta_n, theta_0)
-            omega = compute_importance_weight(trajectory, policy_n, policy_0)
+            # Step 3: Compute gradient for policy_n (grad_new)
+            grad_new, log_probs_n = compute_policy_gradient(
+                trajectory, policy_n, gamma, returns
+            )
+            all_grad_new.append(grad_new)
             
-            # Compute g(tau|theta_0)
-            g_theta_0 = compute_gpomdp_gradient(trajectory, policy_0, gamma)
+            # Step 4: Compute log_probs for policy_0 on SAME actions
+            log_probs_0 = compute_log_probs_fixed_actions(trajectory, policy_0)
             
-            # Correction term: g(tau|theta_n) - omega * g(tau|theta_0)
-            correction = g_theta_n - omega * g_theta_0
-            corrections.append(correction)
+            # Step 5: Compute importance ratios (element-wise)
+            # ratios = exp(log_prob_0 - log_prob_n)
+            ratios = torch.exp(log_probs_0.detach() - log_probs_n.detach())
+            all_ratios.append(ratios.mean().item())  # Track mean ratio for early stopping
+            
+            # Step 6: Compute weighted loss for policy_0
+            # loss_old = -(log_probs_0 * returns * ratios).mean()
+            loss_old = -(log_probs_0 * returns * ratios).mean()
+            
+            # Step 7: Backpropagate to get grad_old
+            policy_0.zero_grad()
+            loss_old.backward()
+            grad_old = torch.cat([p.grad.flatten().clone() for p in policy_0.parameters()])
+            all_grad_old.append(grad_old)
             
             env.close()
         
-        # Average corrections and add mu_t
-        avg_correction = torch.mean(torch.stack(corrections), dim=0)
-        v_t_n = avg_correction + mu_t
+        # Average gradients
+        avg_grad_new = torch.mean(torch.stack(all_grad_new), dim=0)
+        avg_grad_old = torch.mean(torch.stack(all_grad_old), dim=0)
+        mean_ratio = np.mean(all_ratios)
         
-        return v_t_n
+        # SCSG update: v_t_n = grad_new - grad_old + mu_t
+        v_t_n = avg_grad_new - avg_grad_old + mu_t
+        
+        return v_t_n, mean_ratio
     
     def _evaluate_policy(self, num_episodes: int = 10) -> float:
         """Evaluate current policy over multiple episodes"""
@@ -492,6 +564,9 @@ def main():
     )
     
     # Train
+    print("\n" + "="*80)
+    print("CORRECTED FedPG-BR Implementation")
+    print("="*80)
     fedpg = FedPGBR(make_env, config, state_dim, action_dim)
     stats = fedpg.train()
     
@@ -501,3 +576,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

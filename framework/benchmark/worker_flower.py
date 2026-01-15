@@ -15,7 +15,7 @@ Worker = Individual RL Agent that:
 import torch
 import numpy as np
 import gymnasium as gym
-from gym.spaces import Discrete
+from gymnasium.spaces import Discrete
 import random
 
 from original_policy import MlpPolicy, DiagonalGaussianMlpPolicy

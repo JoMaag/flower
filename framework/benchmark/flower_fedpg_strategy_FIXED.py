@@ -28,8 +28,9 @@ from fedpg_br import (
     PolicyNetwork,
     ByzantineFilter,
     sample_trajectory,
-    compute_gpomdp_gradient,
-    compute_importance_weight
+    compute_policy_gradient,
+    compute_log_probs_fixed_actions,
+    compute_returns  # **NEU: FEHLENDER IMPORT**
 )
 
 
@@ -52,7 +53,7 @@ class FedPGStrategy(Strategy):
         action_dim: int,
         batch_size: int = 16,
         mini_batch_size: int = 4,
-        step_size: float = 1e-3,
+        step_size: float = 1e-3,  # Wird jetzt lr für Adam
         gamma: float = 0.99,
         variance_bound: float = 0.1,
         confidence_param: float = 0.6,
@@ -60,7 +61,7 @@ class FedPGStrategy(Strategy):
         num_agents: int = 10,
         min_available_clients: int = 10,
         evaluate_every: int = 10,
-        batch_size_range: Optional[Tuple[int, int]] = None  # (Bmin, Bmax) for adaptive sampling
+        batch_size_range: Optional[Tuple[int, int]] = None
     ):
         super().__init__()
         
@@ -69,7 +70,7 @@ class FedPGStrategy(Strategy):
         self.action_dim = action_dim
         self.batch_size = batch_size
         self.mini_batch_size = mini_batch_size
-        self.step_size = step_size
+        self.step_size = step_size  # Behalte für Kompatibilität
         self.gamma = gamma
         self.variance_bound = variance_bound
         self.confidence_param = confidence_param
@@ -77,12 +78,18 @@ class FedPGStrategy(Strategy):
         self.num_agents = num_agents
         self.min_available_clients = min_available_clients
         self.evaluate_every = evaluate_every
-        self.batch_size_range = batch_size_range  # Store range for adaptive sampling
+        self.batch_size_range = batch_size_range
         
         # Initialize server policy
         self.server_policy = PolicyNetwork(state_dim, action_dim)
         
-        # Snapshots for random output selection (Algorithm 1, line 14)
+        # **NEU: Adam Optimizer wie Betreuer**
+        self.optimizer = torch.optim.Adam(
+            self.server_policy.parameters(), 
+            lr=step_size
+        )
+        
+        # Snapshots for random output selection
         self.policy_snapshots = []
         
         # Byzantine filter
@@ -93,18 +100,12 @@ class FedPGStrategy(Strategy):
             alpha=byzantine_ratio
         )
         
-        # Create server environment for SCSG sampling
+        # Create server environment
         self.server_env = gym.make(env_name)
         
         # Tracking
         self.current_round = 0
-        self.theta_t_0 = None  # Snapshot at beginning of round
-        
-        print(f"FedPG Strategy initialized:")
-        print(f"  Environment: {env_name}")
-        print(f"  Agents: {num_agents} (Byzantine ratio: {byzantine_ratio:.2%})")
-        print(f"  Batch size: {batch_size}, Mini-batch: {mini_batch_size}")
-        print(f"  Step size: {step_size}, Gamma: {gamma}")
+        self.theta_t_0 = None
     
     def initialize_parameters(self, client_manager) -> Optional[Parameters]:
         """
@@ -200,15 +201,37 @@ class FedPGStrategy(Strategy):
         
         # Lines 9-12: SCSG inner loop
         theta_t_n = self.theta_t_0.clone()
+        actual_N_t = N_t  # Track actual steps taken (for early stopping)
         
         for n in range(N_t):
             # Line 11: Compute semi-stochastic gradient
-            v_t_n = self._compute_semi_stochastic_gradient(
+            v_t_n, ratio_mean = self._compute_semi_stochastic_gradient(
                 theta_t_n, self.theta_t_0, mu_t
             )
             
-            # Line 12: Update policy
-            theta_t_n = theta_t_n + self.step_size * v_t_n
+            # **KRITISCH: Early stopping check (Betreuer Zeilen 285-288)**
+            if abs(ratio_mean) < 0.995 or abs(ratio_mean) > 1.005:
+                actual_N_t = n
+                print(f"  Round {server_round}, Step {n}/{N_t}: Early stop (ratio={ratio_mean:.4f})")
+                break
+            
+            # **KORRIGIERT: Use optimizer.step() wie Betreuer (Zeilen 282-286)**
+            # Set current policy parameters
+            self._set_policy_from_tensor(theta_t_n)
+            
+            # Manually set gradients (v_t_n is the final gradient)
+            self.optimizer.zero_grad()
+            offset = 0
+            for param in self.server_policy.parameters():
+                numel = param.numel()
+                param.grad = v_t_n[offset:offset + numel].view(param.shape).clone()
+                offset += numel
+            
+            # Let Adam optimizer do the update
+            self.optimizer.step()
+            
+            # Get updated parameters as tensor
+            theta_t_n = self._get_policy_tensor()
         
         # Line 13: Update server policy with theta_t_N_t
         self._set_policy_from_tensor(theta_t_n)
@@ -226,7 +249,8 @@ class FedPGStrategy(Strategy):
         metrics = {
             "num_good_agents": num_good,
             "num_byzantine_detected": num_byzantine,
-            "scsg_steps": N_t,
+            "scsg_steps": actual_N_t,  # Use actual steps taken
+            "sampled_N_t": N_t,  # Original sampled value
             "gradient_norm": torch.norm(mu_t).item(),
             "batch_size_used": batch_size_used,
         }
@@ -234,7 +258,7 @@ class FedPGStrategy(Strategy):
         # Trajectory counting (from original agent.py line 306)
         # step += round((Batch_size * world_size + b * N_t) / (1 + world_size))
         total_trajectories = round(
-            (batch_size_used * self.num_agents + self.mini_batch_size * N_t) 
+            (batch_size_used * self.num_agents + self.mini_batch_size * actual_N_t) 
             / (1 + self.num_agents)
         )
         metrics["total_trajectories"] = total_trajectories
@@ -333,11 +357,13 @@ class FedPGStrategy(Strategy):
         theta_t_n: torch.Tensor, 
         theta_t_0: torch.Tensor,
         mu_t: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, float]:
         """
         Compute semi-stochastic gradient (Algorithm 1, line 11)
         
         v_t_n = (1/b_t) * sum [g(tau|theta_n) - omega(tau|theta_n, theta_0) * g(tau|theta_0)] + mu_t
+        
+        Returns: (v_t_n, ratio_mean)
         """
         # Create policies for theta_n and theta_0
         policy_n = PolicyNetwork(self.state_dim, self.action_dim)
@@ -346,41 +372,55 @@ class FedPGStrategy(Strategy):
         policy_0 = PolicyNetwork(self.state_dim, self.action_dim)
         policy_0.set_parameters(theta_t_0)
         
-        corrections = []
-        importance_weights = []  # Track for debugging
+        all_grad_new = []
+        all_grad_old = []
+        all_ratios = []
         
         for step_idx in range(self.mini_batch_size):
-            # Sample trajectory using theta_n
+            # Sample trajectory using policy_n (theta_n)
             trajectory, _ = sample_trajectory(self.server_env, policy_n)
             
-            # Compute g(tau|theta_n)
-            g_theta_n = compute_gpomdp_gradient(trajectory, policy_n, self.gamma)
+            # Compute returns for weighting
+            returns = compute_returns(trajectory, self.gamma)
             
-            # Compute importance weight omega(tau|theta_n, theta_0)
-            omega = compute_importance_weight(trajectory, policy_n, policy_0)
-            importance_weights.append(omega)
+            # Step 1: Compute gradient for policy_n
+            grad_new, log_probs_n = compute_policy_gradient(
+                trajectory, policy_n, self.gamma, returns
+            )
             
-            # Early stopping check (from original code, agent.py line 285-288)
-            # If importance ratio deviates too much, policy has diverged
-            if abs(omega) < 0.995 or abs(omega) > 1.005:
-                if step_idx == 0:
-                    # If first iteration fails, just use mu_t
-                    return mu_t
-                # Otherwise use what we have collected so far
-                break
+            # Step 2: Compute log_probs for policy_0 with FIXED actions from trajectory
+            # This is the KEY for importance sampling!
+            log_probs_0 = compute_log_probs_fixed_actions(trajectory, policy_0)
             
-            # Compute g(tau|theta_0)
-            g_theta_0 = compute_gpomdp_gradient(trajectory, policy_0, self.gamma)
+            # Step 3: Compute importance ratios
+            # ratios = exp(log_prob_0 - log_prob_n) per timestep
+            ratios = torch.exp(log_probs_0.detach() - log_probs_n.detach())
+            ratio_mean = ratios.mean().item()
+            all_ratios.append(ratio_mean)
             
-            # Correction term
-            correction = g_theta_n - omega * g_theta_0
-            corrections.append(correction)
+            # Step 4: Compute weighted loss for policy_0
+            # Betreuer line 278: loss_old = -(old_logp * weights * ratios).mean()
+            loss_old = -(log_probs_0 * returns * ratios).mean()
+            
+            # Step 5: Backpropagate to get grad_old
+            policy_0.zero_grad()
+            loss_old.backward()
+            grad_old = torch.cat([p.grad.flatten().clone() for p in policy_0.parameters()])
+            
+            # Store gradients
+            all_grad_new.append(grad_new)
+            all_grad_old.append(grad_old)
         
-        # Average and add mu_t
-        avg_correction = torch.mean(torch.stack(corrections), dim=0)
-        v_t_n = avg_correction + mu_t
+        # Average gradients across mini-batch
+        avg_grad_new = torch.mean(torch.stack(all_grad_new), dim=0)
+        avg_grad_old = torch.mean(torch.stack(all_grad_old), dim=0)
+        avg_ratio = np.mean(all_ratios)
         
-        return v_t_n
+        # SCSG correction: v_t_n = grad_new - grad_old + mu_t
+        # Betreuer line 282: item.grad = item.grad - grad_old[idx] + mu[idx]
+        v_t_n = avg_grad_new - avg_grad_old + mu_t
+        
+        return v_t_n, avg_ratio
     
     def _get_policy_tensor(self) -> torch.Tensor:
         """Get flattened policy parameters as tensor"""
