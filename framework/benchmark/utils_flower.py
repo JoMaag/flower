@@ -169,7 +169,7 @@ def render_policy(policy, env_name, num_episodes=1, max_steps=1000, save_path=No
         List of episode rewards
     """
     import gym
-    from fedpg_br import sample_trajectory
+    from fedpg_br_old import sample_trajectory
     
     env = gym.make(env_name)
     rewards = []

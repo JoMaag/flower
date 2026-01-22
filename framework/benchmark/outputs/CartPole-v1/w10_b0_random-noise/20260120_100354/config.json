@@ -1,0 +1,46 @@
+{
+  "args": {
+    "env": "CartPole-v1",
+    "num_workers": 10,
+    "num_byzantine": 0,
+    "attack": "random-noise",
+    "fedpg_br": false,
+    "rounds": null,
+    "lr": null,
+    "seed": 0,
+    "num_runs": 1,
+    "output_dir": "outputs",
+    "no_save": false,
+    "log_level": "INFO"
+  },
+  "config": {
+    "env_name": "CartPole-v1",
+    "max_episode_len": 500,
+    "max_trajectories": 5000,
+    "gamma": 0.999,
+    "hidden_units": [
+      16,
+      16
+    ],
+    "activation": "ReLU",
+    "output_activation": "Tanh",
+    "lr": 0.001,
+    "batch_size": 16,
+    "batch_size_min": 12,
+    "batch_size_max": 20,
+    "mini_batch_size": 4,
+    "svrpg_iterations": 3,
+    "sigma": 0.06,
+    "delta": 0.6,
+    "num_workers": 10,
+    "num_byzantine": 0,
+    "attack_type": "random-noise",
+    "val_episodes": 10,
+    "val_max_steps": 1000
+  },
+  "env_info": {
+    "state_dim": 4,
+    "action_dim": 2,
+    "is_continuous": false
+  }
+}

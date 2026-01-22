@@ -23,7 +23,7 @@ import flwr as fl
 
 # Local imports
 from flower_fedpg_client import create_client_fn
-from flower_fedpg_strategy_FIXED import FedPGStrategy
+from framework.benchmark.flower_fedpg_strategy import FedPGStrategy
 from original_configs_v2 import get_config, get_env_info
 from original_policy import create_policy
 
@@ -158,12 +158,16 @@ def run_single_seed(opts, run_id: int, tb_writer=None):
     # Run Flower simulation
     print("\nStarting Flower simulation...")
     history = fl.simulation.start_simulation(
-        client_fn=client_fn,
-        num_clients=opts.num_worker,
-        config=fl.server.ServerConfig(num_rounds=num_rounds),
-        strategy=strategy,
-        client_resources=client_resources,
-    )
+    client_fn=client_fn,
+    num_clients=opts.num_worker,
+    config=fl.server.ServerConfig(num_rounds=num_rounds),
+    strategy=strategy,
+    client_resources={"num_cpus": 1, "num_gpus": 0.0},
+    actor_kwargs={
+        "on_actor_init_fn": None
+    },
+    ray_init_args={"num_cpus": 10},  # **WICHTIG**
+)
     
     print("\n" + "="*80)
     print(f"Run {run_id} completed!")
@@ -221,7 +225,7 @@ def run_evaluation(opts):
     
     # Evaluate
     import gym
-    from fedpg_br import sample_trajectory
+    from fedpg_br_old import sample_trajectory
     
     env = gym.make(opts.env_name)
     total_rewards = []

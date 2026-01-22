@@ -24,7 +24,7 @@ import gymnasium as gym
 from typing import Dict, List, Optional, Tuple, Union
 from collections import OrderedDict
 
-from fedpg_br import (
+from fedpg_br_old import (
     PolicyNetwork,
     ByzantineFilter,
     sample_trajectory,
