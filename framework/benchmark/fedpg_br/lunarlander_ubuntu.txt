@@ -1,0 +1,93 @@
+[92mINFO [0m:      FedPG-BR Server: env=LunarLander-v2, workers=10, byzantine=0
+/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/gymnasium/envs/registration.py:512: DeprecationWarning: [33mWARN: The environment LunarLander-v2 is out of date. You should consider upgrading to version `v3`.[0m
+  logger.deprecation(
+[91mERROR [0m:     ServerApp thread raised an exception: Environment version v2 for `LunarLander` is deprecated. Please use `LunarLander-v3` instead.
+[91mERROR [0m:     Traceback (most recent call last):
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/simulation/run_simulation.py", line 273, in server_th_with_start_checks
+    updated_context = _run(
+        grid=_grid,
+    ...<3 lines>...
+        loaded_server_app=_server_app,
+    )
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/server/run_serverapp.py", line 61, in run
+    server_app(grid=grid, context=context)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/server/server_app.py", line 160, in __call__
+    components = self._server_fn(context)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/fedpg_br/server_app.py", line 257, in server_fn
+    strategy = FedPGStrategy(
+        env_name=env_name,
+    ...<2 lines>...
+        use_adaptive_batch=use_fedpg_br,
+    )
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/fedpg_br/server_app.py", line 35, in __init__
+    env_info = get_env_info(env_name)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/fedpg_br/config.py", line 86, in get_env_info
+    env = gym.make(env_name)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/gymnasium/envs/registration.py", line 681, in make
+    env_spec = _find_spec(id)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/gymnasium/envs/registration.py", line 526, in _find_spec
+    _check_version_exists(ns, name, version)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/gymnasium/envs/registration.py", line 426, in _check_version_exists
+    raise error.DeprecatedEnv(
+    ...<2 lines>...
+    )
+gymnasium.error.DeprecatedEnv: Environment version v2 for `LunarLander` is deprecated. Please use `LunarLander-v3` instead.
+
+Exception in thread Thread-1 (server_th_with_start_checks):
+Traceback (most recent call last):
+  File "/home/joel/miniconda3/lib/python3.13/threading.py", line 1044, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "/home/joel/miniconda3/lib/python3.13/threading.py", line 995, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/simulation/run_simulation.py", line 273, in server_th_with_start_checks
+    updated_context = _run(
+        grid=_grid,
+    ...<3 lines>...
+        loaded_server_app=_server_app,
+    )
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/server/run_serverapp.py", line 61, in run
+    server_app(grid=grid, context=context)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/server/server_app.py", line 160, in __call__
+    components = self._server_fn(context)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/fedpg_br/server_app.py", line 257, in server_fn
+    strategy = FedPGStrategy(
+        env_name=env_name,
+    ...<2 lines>...
+        use_adaptive_batch=use_fedpg_br,
+    )
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/fedpg_br/server_app.py", line 35, in __init__
+    env_info = get_env_info(env_name)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/fedpg_br/config.py", line 86, in get_env_info
+    env = gym.make(env_name)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/gymnasium/envs/registration.py", line 681, in make
+    env_spec = _find_spec(id)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/gymnasium/envs/registration.py", line 526, in _find_spec
+    _check_version_exists(ns, name, version)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/gymnasium/envs/registration.py", line 426, in _check_version_exists
+    raise error.DeprecatedEnv(
+    ...<2 lines>...
+    )
+gymnasium.error.DeprecatedEnv: Environment version v2 for `LunarLander` is deprecated. Please use `LunarLander-v3` instead.
+/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/ray/_private/worker.py:2051: FutureWarning: Tip: In future versions of Ray, Ray will no longer override accelerator visible devices env var if num_gpus=0 or num_gpus=None (default). To enable this behavior and turn off this error message, set RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+  warnings.warn(
+Traceback (most recent call last):
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/bin/flower-simulation", line 6, in <module>
+    sys.exit(run_simulation_from_cli())
+             ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/simulation/run_simulation.py", line 145, in run_simulation_from_cli
+    _ = _run_simulation(
+        server_app_attr=server_app_attr,
+    ...<10 lines>...
+        exit_event=EventType.CLI_FLOWER_SIMULATION_LEAVE,
+    )
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/simulation/run_simulation.py", line 514, in _run_simulation
+    updated_context = _main_loop(*args)
+  File "/mnt/c/Users/joelm/flower/framework/benchmark/fedpg_br/venv_ubuntu/lib/python3.13/site-packages/flwr/simulation/run_simulation.py", line 412, in _main_loop
+    raise RuntimeError("Exception in ServerApp thread")
+RuntimeError: Exception in ServerApp thread

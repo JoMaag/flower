@@ -56,12 +56,12 @@ _CONFIGS = {
         batch_size_min=20, batch_size_max=28, mini_batch_size=6, sigma=0.08
     ),
     "LunarLander-v2": Config(
-        env_name="LunarLander-v2", max_episode_len=1000, gamma=0.99,
+        env_name="LunarLander-v2", max_episode_len=1000, gamma=0.990,
         hidden_units=(64, 64), activation="Tanh", batch_size=32,
         batch_size_min=26, batch_size_max=38, mini_batch_size=8, sigma=0.07
     ),
     "LunarLander-v3": Config(
-        env_name="LunarLander-v3", max_episode_len=1000, gamma=0.99,
+        env_name="LunarLander-v3", max_episode_len=1000, gamma=0.990,
         hidden_units=(64, 64), activation="Tanh", batch_size=32,
         batch_size_min=26, batch_size_max=38, mini_batch_size=8, sigma=0.07
     ),

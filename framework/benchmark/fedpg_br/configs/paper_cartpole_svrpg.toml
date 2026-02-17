@@ -1,0 +1,10 @@
+# CartPole-v1 - SVRPG (Variance Reduction Only)
+# Same hyperparameters as paper, using SCSG but no Byzantine filtering
+
+env = "CartPole-v1"
+num-server-rounds = 312
+num-workers = 10
+num-byzantine = 0
+method = "svrpg"
+use-fedpg-br = false
+use-adaptive-communication = false

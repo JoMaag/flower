@@ -1,0 +1,35 @@
+name: "Scalability Study"
+description: "Test FedPG-BR performance with varying numbers of workers"
+version: "1.0"
+
+base_config:
+  env: "CartPole-v1"
+  num-server-rounds: 150
+  attack-type: "sign-flip"
+  use-fedpg-br: true
+
+# Vary number of workers and maintain 30% Byzantine ratio
+parameter_list:
+  - num-workers: 3
+    num-byzantine: 1
+  - num-workers: 5
+    num-byzantine: 2
+  - num-workers: 10
+    num-byzantine: 3
+  - num-workers: 15
+    num-byzantine: 5
+  - num-workers: 20
+    num-byzantine: 6
+  - num-workers: 30
+    num-byzantine: 9
+
+metrics_to_track:
+  - avg_reward
+  - num_good_agents
+  - scsg_steps
+  - elapsed_time
+
+tags:
+  - scalability
+  - workers
+  - performance

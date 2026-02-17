@@ -24,33 +24,42 @@ from fedpg_br.core.gradient import compute_policy_gradient, compute_log_probs
 
 
 class FedPGStrategy(Strategy):
-    """FedPG-BR Strategy implementing Algorithm 1."""
-    
+    """FedPG-BR Strategy implementing Algorithm 1.
+
+    Supports three aggregation methods from the paper:
+      - 'fedpg-br': Full FedPG-BR (Byzantine filtering + SCSG)
+      - 'svrpg': SCSG variance reduction only (no Byzantine filtering)
+      - 'gomdp': Simple averaging (no SCSG, no filtering)
+    """
+
     def __init__(self, env_name: str, num_agents: int, byzantine_ratio: float = 0.0,
-                 use_adaptive_batch: bool = False):
+                 use_adaptive_batch: bool = False, method: str = 'fedpg-br'):
         super().__init__()
-        
+
         self.config = get_config(env_name)
         self.env_name = env_name
+        self.method = method
         env_info = get_env_info(env_name)
         self.state_dim = env_info["state_dim"]
         self.action_dim = env_info["action_dim"]
         self.num_agents = num_agents
         self.use_adaptive_batch = use_adaptive_batch
-        
+
         self.policy = create_policy(
             self.state_dim, self.action_dim, env_name,
             self.config.hidden_units, self.config.activation, self.config.output_activation
         )
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.config.lr)
-        
+
         self.byzantine_filter = ByzantineFilter(
             self.config.sigma, self.config.delta, num_agents, byzantine_ratio
         )
-        
+
         self.env = gym.make(env_name)
         self.theta_t_0 = None
         self._current_batch_size = self.config.batch_size
+
+        log(INFO, f"Method: {self.method.upper()}")
     
     def initialize_parameters(self, client_manager) -> Optional[Parameters]:
         return ndarrays_to_parameters([p.cpu().detach().numpy() for p in self.policy.parameters()])
@@ -74,48 +83,119 @@ class FedPGStrategy(Strategy):
                       failures) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
         if not results:
             return None, {}
-        
+
+        # Filter out clients that skipped this round (num_examples == 0)
+        active_results = []
+        skipped_count = 0
+        total_divergence = 0.0
+
+        for client_proxy, fit_res in results:
+            if fit_res.num_examples > 0:
+                active_results.append((client_proxy, fit_res))
+            else:
+                skipped_count += 1
+                # Track divergence metrics from skipped clients
+                if "divergence" in fit_res.metrics:
+                    total_divergence += fit_res.metrics["divergence"]
+
+        # If all clients skipped, return current parameters unchanged
+        if not active_results:
+            log(INFO, f"Round {server_round}: All clients skipped (divergence too small)")
+            return ndarrays_to_parameters([p.cpu().detach().numpy() for p in self.policy.parameters()]), {
+                "num_good_agents": 0,
+                "scsg_steps": 0,
+                "batch_size": self._current_batch_size,
+                "skipped_clients": skipped_count,
+                "active_clients": 0,
+                "avg_divergence": total_divergence / len(results) if results else 0.0,
+            }
+
         gradients = []
-        for _, fit_res in results:
+        for _, fit_res in active_results:
             grad_numpy = parameters_to_ndarrays(fit_res.parameters)
             grad_tensor = torch.cat([torch.from_numpy(g).flatten() for g in grad_numpy]).float()
             gradients.append(grad_tensor)
-        
-        mu_t, good_agents = self.byzantine_filter.aggregate(gradients, self._current_batch_size)
-        
-        p_geom = self.config.mini_batch_size / (self._current_batch_size + self.config.mini_batch_size)
-        N_t = np.random.geometric(p_geom)
-        
-        theta_t_n = self.theta_t_0.clone()
-        actual_steps = 0
-        
-        for n in range(N_t):
-            v_t_n, ratio = self._scsg_step(theta_t_n, self.theta_t_0, mu_t)
-            
-            if ratio < 0.995 or ratio > 1.005:
-                break
-            
-            self.policy.set_flat_params(theta_t_n)
+
+        if self.method == 'gomdp':
+            # GOMDP: Simple averaging, single gradient step, no filtering
+            mu_t = torch.mean(torch.stack(gradients), dim=0)
+            good_agents = list(range(len(gradients)))
+
+            self.policy.set_flat_params(self.theta_t_0)
             self.optimizer.zero_grad()
-            
             offset = 0
             for param in self.policy.parameters():
                 size = param.numel()
-                param.grad = v_t_n[offset:offset + size].view(param.shape).clone()
+                param.grad = mu_t[offset:offset + size].view(param.shape).clone()
                 offset += size
-            
             self.optimizer.step()
-            theta_t_n = self.policy.get_flat_params()
-            actual_steps = n + 1
-        
-        self.policy.set_flat_params(theta_t_n)
-        
-        log(INFO, f"Round {server_round}: good_agents={len(good_agents)}, scsg_steps={actual_steps}")
-        
+            actual_steps = 1
+
+        elif self.method == 'svrpg':
+            # SVRPG: No Byzantine filtering, but uses SCSG variance reduction
+            mu_t = torch.mean(torch.stack(gradients), dim=0)
+            good_agents = list(range(len(gradients)))
+
+            p_geom = self.config.mini_batch_size / (self._current_batch_size + self.config.mini_batch_size)
+            N_t = np.random.geometric(p_geom)
+
+            theta_t_n = self.theta_t_0.clone()
+            actual_steps = 0
+
+            for n in range(N_t):
+                v_t_n, ratio = self._scsg_step(theta_t_n, self.theta_t_0, mu_t)
+                if ratio < 0.995 or ratio > 1.005:
+                    break
+                self.policy.set_flat_params(theta_t_n)
+                self.optimizer.zero_grad()
+                offset = 0
+                for param in self.policy.parameters():
+                    size = param.numel()
+                    param.grad = v_t_n[offset:offset + size].view(param.shape).clone()
+                    offset += size
+                self.optimizer.step()
+                theta_t_n = self.policy.get_flat_params()
+                actual_steps = n + 1
+
+            self.policy.set_flat_params(theta_t_n)
+
+        else:
+            # FedPG-BR: Byzantine filtering + SCSG
+            mu_t, good_agents = self.byzantine_filter.aggregate(gradients, self._current_batch_size)
+
+            p_geom = self.config.mini_batch_size / (self._current_batch_size + self.config.mini_batch_size)
+            N_t = np.random.geometric(p_geom)
+
+            theta_t_n = self.theta_t_0.clone()
+            actual_steps = 0
+
+            for n in range(N_t):
+                v_t_n, ratio = self._scsg_step(theta_t_n, self.theta_t_0, mu_t)
+                if ratio < 0.995 or ratio > 1.005:
+                    break
+                self.policy.set_flat_params(theta_t_n)
+                self.optimizer.zero_grad()
+                offset = 0
+                for param in self.policy.parameters():
+                    size = param.numel()
+                    param.grad = v_t_n[offset:offset + size].view(param.shape).clone()
+                    offset += size
+                self.optimizer.step()
+                theta_t_n = self.policy.get_flat_params()
+                actual_steps = n + 1
+
+            self.policy.set_flat_params(theta_t_n)
+
+        log(INFO, f"Round {server_round} [{self.method.upper()}]: good_agents={len(good_agents)}, "
+                  f"scsg_steps={actual_steps}, active={len(active_results)}, skipped={skipped_count}")
+
         return ndarrays_to_parameters([p.cpu().detach().numpy() for p in self.policy.parameters()]), {
             "num_good_agents": len(good_agents),
             "scsg_steps": actual_steps,
             "batch_size": self._current_batch_size,
+            "skipped_clients": skipped_count,
+            "active_clients": len(active_results),
+            "avg_divergence": total_divergence / len(results) if results else 0.0,
         }
     
     def _scsg_step(self, theta_n: torch.Tensor, theta_0: torch.Tensor, mu_t: torch.Tensor):
@@ -173,27 +253,99 @@ class FedPGStrategy(Strategy):
         return float(-avg), {"server_avg_reward": avg}
 
 
+_dashboard_started = False
+
+
+def _start_dashboard_background():
+    """Start the web dashboard in a background thread (auto-starts once)."""
+    global _dashboard_started
+    if _dashboard_started:
+        return
+    _dashboard_started = True
+
+    try:
+        import threading
+        from fedpg_br.dashboard.app import app as flask_app, socketio
+
+        def run():
+            try:
+                socketio.run(flask_app, host="127.0.0.1", port=5000,
+                             debug=False, allow_unsafe_werkzeug=True, log_output=False)
+            except Exception:
+                pass  # Dashboard is optional, don't crash the server
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        log(INFO, "Dashboard started at http://127.0.0.1:5000/experiment")
+    except ImportError:
+        log(INFO, "Dashboard not available (install flask: pip install -e '.[dashboard]')")
+
+
 def server_fn(context: Context):
     """Create FedPG-BR server."""
     run_config = context.run_config
-    
+
     env_name = str(run_config.get("env", "CartPole-v1"))
     num_rounds = int(run_config.get("num-server-rounds", 50))
     num_workers = int(run_config.get("num-workers", 10))
     num_byzantine = int(run_config.get("num-byzantine", 0))
     use_fedpg_br = bool(run_config.get("use-fedpg-br", False))
-    
+    method = str(run_config.get("method", "fedpg-br" if use_fedpg_br else "gomdp"))
+    enable_benchmark = str(run_config.get("enable-benchmark", "false")).lower() == "true"
+
     byzantine_ratio = num_byzantine / num_workers if num_workers > 0 else 0.0
-    
-    log(INFO, f"FedPG-BR Server: env={env_name}, workers={num_workers}, byzantine={num_byzantine}")
-    
-    strategy = FedPGStrategy(
-        env_name=env_name,
-        num_agents=num_workers,
-        byzantine_ratio=byzantine_ratio,
-        use_adaptive_batch=use_fedpg_br,
-    )
-    
+
+    # Auto-start dashboard
+    _start_dashboard_background()
+
+    log(INFO, f"FedPG-BR Server: env={env_name}, workers={num_workers}, byzantine={num_byzantine}, method={method}")
+
+    # Check if benchmark metrics collection is enabled
+    if enable_benchmark:
+        # Import benchmark components (lazy import to avoid dependency issues)
+        try:
+            from fedpg_br.benchmark.wrappers import InstrumentedFedPGStrategy
+            from fedpg_br.benchmark.metrics_collector import MetricsCollector
+
+            # Get run ID and results directory from config
+            run_id = str(run_config.get("benchmark-run-id", "unknown"))
+            results_dir = str(run_config.get("benchmark-results-dir", "."))
+
+            log(INFO, f"Benchmark mode enabled: run_id={run_id}, results_dir={results_dir}")
+
+            # Create metrics collector in this process with file-based storage
+            metrics_collector = MetricsCollector(run_id, results_dir=results_dir)
+
+            # Create instrumented strategy
+            strategy = InstrumentedFedPGStrategy(
+                metrics_collector=metrics_collector,
+                env_name=env_name,
+                num_agents=num_workers,
+                byzantine_ratio=byzantine_ratio,
+                use_adaptive_batch=use_fedpg_br,
+                method=method,
+            )
+
+            log(INFO, "Using InstrumentedFedPGStrategy with metrics collection")
+
+        except ImportError as e:
+            log(INFO, f"Warning: Benchmark components not available ({e}), using standard strategy")
+            strategy = FedPGStrategy(
+                env_name=env_name,
+                num_agents=num_workers,
+                byzantine_ratio=byzantine_ratio,
+                use_adaptive_batch=use_fedpg_br,
+                method=method,
+            )
+    else:
+        strategy = FedPGStrategy(
+            env_name=env_name,
+            num_agents=num_workers,
+            byzantine_ratio=byzantine_ratio,
+            use_adaptive_batch=use_fedpg_br,
+            method=method,
+        )
+
     config = ServerConfig(num_rounds=num_rounds)
     return fl.server.ServerAppComponents(strategy=strategy, config=config)
 

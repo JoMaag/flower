@@ -1,0 +1,48 @@
+# FedPG-BR Server-Only Docker Compose
+# Use this on the server machine for distributed deployment
+
+version: '3.8'
+
+services:
+  # Flask Dashboard - Web UI for monitoring
+  dashboard:
+    build: .
+    container_name: fedpg-dashboard
+    command: python -m fedpg_br.dashboard.app --host 0.0.0.0
+    ports:
+      - "5000:5000"
+    networks:
+      - fedpg-network
+    environment:
+      - FLASK_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Flower Server - Aggregation coordinator
+  server:
+    build: .
+    container_name: fedpg-server
+    command: >
+      python -m fedpg_br.deploy_server
+      --host 0.0.0.0
+      --port 8080
+      --clients 4
+      --rounds 50
+      --env TrafficLight-v1
+      --fedpg-br
+    ports:
+      - "8080:8080"
+    networks:
+      - fedpg-network
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    environment:
+      - PYTHONUNBUFFERED=1
+
+networks:
+  fedpg-network:
+    driver: bridge

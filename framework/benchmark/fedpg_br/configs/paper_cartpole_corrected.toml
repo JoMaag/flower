@@ -1,0 +1,28 @@
+# CartPole-v1 - Paper Hyperparameters (CORRECTED)
+# 5000 maximum TRAJECTORIES (not rounds!)
+# With K=10 agents and Bt~16: 5000/(10*16) ≈ 31 rounds
+
+env = "CartPole-v1"
+
+# Training setup - CORRECTED for trajectory count
+num-server-rounds = 50     # ~50 rounds to collect 5000+ trajectories
+num-workers = 10           # K = 10 agents
+num-byzantine = 0          # No Byzantine agents (α = 0)
+
+# FedPG-BR settings
+use-fedpg-br = true
+
+# All other parameters configured in config.py:
+# - hidden_units = [16, 16]
+# - activation = "relu"
+# - output_activation = "tanh"
+# - learning_rate = 1e-3
+# - gamma = 0.999
+# - batch_size_min = 12, batch_size_max = 20 (avg ~16)
+# - mini_batch_size = 4
+# - sigma = 0.06
+# - delta = 0.6
+# - max_episode_len = 500
+
+# Adaptive communication (optional)
+use-adaptive-communication = false

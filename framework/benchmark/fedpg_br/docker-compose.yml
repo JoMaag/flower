@@ -1,0 +1,65 @@
+# FedPG-BR Docker Compose
+# General-purpose configuration for any environment and strategy
+#
+# Usage:
+#   docker-compose up                                    # Default: CartPole, FedPG-BR, 10 workers
+#   ENV=LunarLander-v3 docker-compose up                 # Change environment
+#   METHOD=gomdp docker-compose up                       # Change strategy
+#   NUM_WORKERS=10 NUM_BYZANTINE=3 docker-compose up     # Add Byzantine agents
+
+services:
+  # Web Dashboard - monitoring UI at http://localhost:5000/experiment
+  dashboard:
+    build: .
+    container_name: fedpg-dashboard
+    command: python -m fedpg_br.dashboard.app
+    ports:
+      - "5000:5000"
+    networks:
+      - fedpg-network
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+
+  # Flower Server - aggregation coordinator
+  server:
+    build: .
+    container_name: fedpg-server
+    command: >
+      python -m fedpg_br.deploy_server
+      --host 0.0.0.0
+      --port 8080
+      --clients ${NUM_WORKERS:-10}
+      --rounds ${NUM_ROUNDS:-312}
+      --env ${ENV:-CartPole-v1}
+      --method ${METHOD:-fedpg-br}
+      --byzantine-ratio ${BYZANTINE_RATIO:-0.0}
+    ports:
+      - "8080:8080"
+    networks:
+      - fedpg-network
+    depends_on:
+      - dashboard
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  # Honest workers
+  worker:
+    build: .
+    command: >
+      python -m fedpg_br.deploy_client
+      --server server:8080
+      --id 1
+      --env ${ENV:-CartPole-v1}
+    networks:
+      - fedpg-network
+    depends_on:
+      - server
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      replicas: ${NUM_WORKERS:-10}
+
+networks:
+  fedpg-network:
+    driver: bridge

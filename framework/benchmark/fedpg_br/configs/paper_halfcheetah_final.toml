@@ -1,0 +1,30 @@
+# HalfCheetah-v2 - Paper Hyperparameters (FINAL CORRECTED)
+# Based on original implementation analysis
+# ~208 rounds to match paper's 10000 trajectory budget and 4h runtime
+
+env = "HalfCheetah-v5"
+
+# Training setup - FINAL CORRECTION
+num-server-rounds = 208    # Matches original paper's implementation
+num-workers = 10           # K = 10 agents
+num-byzantine = 0          # α = 0 (no Byzantine for baseline)
+
+# FedPG-BR settings
+use-fedpg-br = true
+
+# Paper parameters (from original code):
+# - hidden_units = [64, 64]
+# - activation = "tanh"
+# - output_activation = "tanh"
+# - learning_rate = 8e-5
+# - gamma = 0.995
+# - batch_size_min = 46, batch_size_max = 50 (avg ~48)
+# - mini_batch_size = 16
+# - sigma = 0.9
+# - delta = 0.6
+# - max_episode_len = 500 (training)
+
+# Expected runtime: ~4 hours (matching paper)
+# Expected final reward: ~2500-3000
+
+use-adaptive-communication = false

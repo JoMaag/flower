@@ -1,0 +1,34 @@
+name: "Hyperparameter Sweep"
+description: "Grid search over key hyperparameters to find optimal settings"
+version: "1.0"
+
+base_config:
+  env: "LunarLander-v3"
+  num-server-rounds: 200
+  num-workers: 10
+  num-byzantine: 3
+  attack-type: "sign-flip"
+  use-fedpg-br: true
+
+# Grid search: 3 LRs × 4 batch sizes = 12 runs
+parameter_matrix:
+  learning-rate:
+    - 0.0001
+    - 0.001
+    - 0.01
+  batch-size:
+    - 12
+    - 16
+    - 24
+    - 32
+
+metrics_to_track:
+  - avg_reward
+  - loss
+  - scsg_steps
+  - num_good_agents
+
+tags:
+  - hyperparameters
+  - optimization
+  - grid-search
