@@ -11,7 +11,7 @@ dependencies = [
     "flwr[simulation]>=1.13.0",
     "torch>=1.12.0",
     "numpy>=1.21.0",
-    "gymnasium>=0.26.0",
+    "gymnasium[box2d]>=0.26.0",
     "chardet",
     "typer>=0.9.0",
     "rich>=13.0.0",
@@ -59,6 +59,16 @@ method = "fedpg-br"
 enable-benchmark = false
 benchmark-run-id = ""
 benchmark-results-dir = ""
+# Advanced tuning (overridable from dashboard)
+batch-size = 0
+lr = 0.0
+sigma = 0.0
+gamma = 0.0
+mini-batch-size = 0
+delta = 0.0
+max-episode-len = 0
+hidden-units = ""
+activation = ""
 # Adaptive communication settings
 use-adaptive-communication = false
 divergence-threshold = 0.1

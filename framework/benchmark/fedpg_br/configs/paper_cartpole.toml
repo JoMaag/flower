@@ -1,36 +1,30 @@
-# CartPole-v1 - Paper Hyperparameters
-# From mentor's paper (ideal system, no Byzantine agents)
+# CartPole-v1 - Paper Hyperparameters (FINAL CORRECTED)
+# Based on original implementation analysis
+# ~312 rounds to match paper's 5000 trajectory budget and 2.5h runtime
 
 env = "CartPole-v1"
 
-# Training setup
-num-server-rounds = 5000  # Maximum trajectories
-num-workers = 10          # K agents (adjust as needed)
-num-byzantine = 0         # No Byzantine agents
+# Training setup - FINAL CORRECTION
+num-server-rounds = 312    # Matches original paper's implementation
+num-workers = 10           # K = 10 agents
+num-byzantine = 0          # α = 0 (no Byzantine for baseline)
 
 # FedPG-BR settings
 use-fedpg-br = true
 
-# Network architecture (will be set in config.py)
-# hidden_units = [16, 16]
-# activation = "relu"
-# output_activation = "tanh"
+# Paper parameters (from original code):
+# - hidden_units = [16, 16]
+# - activation = "relu"
+# - output_activation = "tanh"
+# - learning_rate = 1e-3
+# - gamma = 0.999
+# - batch_size_min = 12, batch_size_max = 20 (avg ~16)
+# - mini_batch_size = 4
+# - sigma = 0.06
+# - delta = 0.6
+# - max_episode_len = 500
 
-# Learning parameters
-# learning-rate = 0.001    # η = 1e-3 (set in config.py)
-# gamma = 0.999            # Discount factor (set in config.py)
+# Expected runtime: ~2.5 hours (matching paper)
+# Expected final reward: ~475-500
 
-# Batch sizes
-# batch_size_min = 12      # Bt sampled from [12, 20]
-# batch_size_max = 20
-# mini_batch_size = 4      # bt = 4
-
-# Byzantine robustness parameters
-# sigma = 0.06             # Variance bound (set in config.py)
-# delta = 0.6              # Confidence parameter (set in config.py)
-
-# Task horizon
-# max_episode_len = 500    # H for training (set in config.py)
-
-# Adaptive communication (optional)
 use-adaptive-communication = false

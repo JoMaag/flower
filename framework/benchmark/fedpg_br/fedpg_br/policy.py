@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Normal
-from typing import List, Tuple, Optional, Union
+from typing import List, Tuple, Optional
 
 
 def _build_mlp(sizes: List[int], activation: type, output_activation: type) -> nn.Sequential:

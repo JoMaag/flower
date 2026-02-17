@@ -5,6 +5,7 @@ import numpy as np
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
 
+import fedpg_br.envs  # noqa: F401 - registers custom environments
 from fedpg_br.config import get_config, ATTACK_ALIASES
 from fedpg_br.flower.worker import Worker
 

@@ -65,6 +65,11 @@ _CONFIGS = {
         hidden_units=(64, 64), activation="Tanh", batch_size=32,
         batch_size_min=26, batch_size_max=38, mini_batch_size=8, sigma=0.07
     ),
+    "TrafficLight-v1": Config(
+        env_name="TrafficLight-v1", max_episode_len=1000, gamma=0.99,
+        hidden_units=(32, 32), activation="Tanh", batch_size=24,
+        batch_size_min=20, batch_size_max=28, mini_batch_size=6, sigma=0.08
+    ),
     "HalfCheetah-v2": Config(
         env_name="HalfCheetah-v2", gamma=0.995, hidden_units=(64, 64),
         activation="Tanh", lr=8e-5, batch_size=48, batch_size_min=46,

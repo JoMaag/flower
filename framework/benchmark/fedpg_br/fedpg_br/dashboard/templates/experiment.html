@@ -297,6 +297,7 @@
                     <option value="HalfCheetah-v5">HalfCheetah-v5</option>
                     <option value="MountainCar-v0">MountainCar-v0</option>
                     <option value="Acrobot-v1">Acrobot-v1</option>
+                    <option value="TrafficLight-v1">TrafficLight-v1</option>
                 </select>
             </div>
 
@@ -343,6 +344,61 @@
             </div>
 
             <div class="divider"></div>
+
+            <details style="margin-bottom:16px">
+                <summary style="cursor:pointer;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);font-weight:600;">Advanced Settings</summary>
+                <div style="margin-top:12px">
+                    <div class="form-group">
+                        <label>Batch Size</label>
+                        <input type="number" id="batch-size" value="16" min="1" max="128">
+                        <div class="hint">Trajectories per worker per round</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Learning Rate</label>
+                        <input type="number" id="learning-rate" value="0.001" min="0.00001" max="1" step="0.0001">
+                    </div>
+                    <div class="form-group">
+                        <label>Sigma (filter threshold)</label>
+                        <input type="number" id="sigma" value="0.06" min="0.01" max="5" step="0.01">
+                        <div class="hint">Higher = more lenient Byzantine filter</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Gamma (discount)</label>
+                        <input type="number" id="gamma" value="0.999" min="0.9" max="1" step="0.001">
+                    </div>
+                    <div class="form-group">
+                        <label>Mini Batch Size</label>
+                        <input type="number" id="mini-batch-size" value="4" min="1" max="64">
+                        <div class="hint">SCSG inner loop trajectories (lower = faster)</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Delta (confidence)</label>
+                        <input type="number" id="delta" value="0.6" min="0.01" max="1" step="0.05">
+                        <div class="hint">Byzantine filter confidence parameter</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Max Episode Length</label>
+                        <input type="number" id="max-episode-len" value="500" min="50" max="10000" step="50">
+                    </div>
+                    <div class="form-group">
+                        <label>Hidden Units</label>
+                        <select id="hidden-units">
+                            <option value="16,16">16, 16 (small)</option>
+                            <option value="32,32">32, 32 (medium)</option>
+                            <option value="64,64">64, 64 (large)</option>
+                            <option value="128,128">128, 128 (extra large)</option>
+                        </select>
+                        <div class="hint">Policy network layer sizes</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Activation</label>
+                        <select id="activation">
+                            <option value="ReLU">ReLU</option>
+                            <option value="Tanh">Tanh</option>
+                        </select>
+                    </div>
+                </div>
+            </details>
 
             <button class="btn btn-primary" id="btn-start" onclick="startExperiment()">
                 Start Experiment
@@ -426,11 +482,12 @@
 
         // Environment defaults
         const envDefaults = {
-            'CartPole-v1': { rounds: 312, reward_range: [0, 500] },
-            'LunarLander-v3': { rounds: 323, reward_range: [-300, 300] },
-            'HalfCheetah-v5': { rounds: 208, reward_range: [-500, 5000] },
-            'MountainCar-v0': { rounds: 200, reward_range: [-200, 0] },
-            'Acrobot-v1': { rounds: 200, reward_range: [-500, 0] },
+            'CartPole-v1': { rounds: 312, batch_size: 16, lr: 0.001, sigma: 0.06, gamma: 0.999, mini_batch: 4, delta: 0.6, max_ep: 500, hidden: '16,16', activation: 'ReLU' },
+            'LunarLander-v3': { rounds: 323, batch_size: 32, lr: 0.001, sigma: 0.07, gamma: 0.99, mini_batch: 8, delta: 0.6, max_ep: 1000, hidden: '64,64', activation: 'Tanh' },
+            'HalfCheetah-v5': { rounds: 208, batch_size: 48, lr: 0.00008, sigma: 0.9, gamma: 0.995, mini_batch: 16, delta: 0.6, max_ep: 1000, hidden: '64,64', activation: 'Tanh' },
+            'MountainCar-v0': { rounds: 200, batch_size: 24, lr: 0.001, sigma: 0.08, gamma: 0.99, mini_batch: 6, delta: 0.6, max_ep: 1000, hidden: '32,32', activation: 'Tanh' },
+            'Acrobot-v1': { rounds: 200, batch_size: 24, lr: 0.001, sigma: 0.08, gamma: 0.99, mini_batch: 6, delta: 0.6, max_ep: 500, hidden: '32,32', activation: 'Tanh' },
+            'TrafficLight-v1': { rounds: 200, batch_size: 24, lr: 0.001, sigma: 0.08, gamma: 0.99, mini_batch: 6, delta: 0.6, max_ep: 1000, hidden: '32,32', activation: 'Tanh' },
         };
 
         // Initialize charts
@@ -500,6 +557,15 @@
                 num_byzantine: parseInt(document.getElementById('num-byzantine').value),
                 num_rounds: parseInt(document.getElementById('num-rounds').value),
                 attack_type: document.getElementById('attack-type').value,
+                batch_size: parseInt(document.getElementById('batch-size').value),
+                learning_rate: parseFloat(document.getElementById('learning-rate').value),
+                sigma: parseFloat(document.getElementById('sigma').value),
+                gamma: parseFloat(document.getElementById('gamma').value),
+                mini_batch_size: parseInt(document.getElementById('mini-batch-size').value),
+                delta: parseFloat(document.getElementById('delta').value),
+                max_episode_len: parseInt(document.getElementById('max-episode-len').value),
+                hidden_units: document.getElementById('hidden-units').value,
+                activation: document.getElementById('activation').value,
             };
 
             isRunning = true;
@@ -636,6 +702,15 @@
             const defaults = envDefaults[this.value];
             if (defaults) {
                 document.getElementById('num-rounds').value = defaults.rounds;
+                document.getElementById('batch-size').value = defaults.batch_size;
+                document.getElementById('learning-rate').value = defaults.lr;
+                document.getElementById('sigma').value = defaults.sigma;
+                document.getElementById('gamma').value = defaults.gamma;
+                document.getElementById('mini-batch-size').value = defaults.mini_batch;
+                document.getElementById('delta').value = defaults.delta;
+                document.getElementById('max-episode-len').value = defaults.max_ep;
+                document.getElementById('hidden-units').value = defaults.hidden;
+                document.getElementById('activation').value = defaults.activation;
             }
         });
 

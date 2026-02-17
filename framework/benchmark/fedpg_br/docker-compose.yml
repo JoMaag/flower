@@ -20,6 +20,7 @@ services:
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
+      - RUNNING_IN_DOCKER=1
 
   # Flower Server - aggregation coordinator
   server:

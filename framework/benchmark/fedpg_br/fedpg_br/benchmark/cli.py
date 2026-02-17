@@ -1,6 +1,5 @@
 """Command-line interface for FedPG-BR benchmark."""
 
-import json
 from pathlib import Path
 from typing import Optional
 

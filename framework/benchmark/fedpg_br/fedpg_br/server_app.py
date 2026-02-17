@@ -3,6 +3,7 @@
 import numpy as np
 import torch
 import gymnasium as gym
+import fedpg_br.envs  # noqa: F401 - registers custom environments
 from typing import Dict, List, Optional, Tuple, Union
 from logging import INFO
 
@@ -33,10 +34,10 @@ class FedPGStrategy(Strategy):
     """
 
     def __init__(self, env_name: str, num_agents: int, byzantine_ratio: float = 0.0,
-                 use_adaptive_batch: bool = False, method: str = 'fedpg-br'):
+                 use_adaptive_batch: bool = False, method: str = 'fedpg-br', config=None):
         super().__init__()
 
-        self.config = get_config(env_name)
+        self.config = config if config is not None else get_config(env_name)
         self.env_name = env_name
         self.method = method
         env_info = get_env_info(env_name)
@@ -293,6 +294,31 @@ def server_fn(context: Context):
     method = str(run_config.get("method", "fedpg-br" if use_fedpg_br else "gomdp"))
     enable_benchmark = str(run_config.get("enable-benchmark", "false")).lower() == "true"
 
+    # Override config with dashboard-provided advanced settings
+    cfg = get_config(env_name)
+    if int(run_config.get("batch-size", 0)) > 0:
+        cfg.batch_size = int(run_config["batch-size"])
+    if float(run_config.get("lr", 0)) > 0:
+        cfg.lr = float(run_config["lr"])
+    if float(run_config.get("sigma", 0)) > 0:
+        cfg.sigma = float(run_config["sigma"])
+    if float(run_config.get("gamma", 0)) > 0:
+        cfg.gamma = float(run_config["gamma"])
+    if int(run_config.get("mini-batch-size", 0)) > 0:
+        cfg.mini_batch_size = int(run_config["mini-batch-size"])
+    if float(run_config.get("delta", 0)) > 0:
+        cfg.delta = float(run_config["delta"])
+    if int(run_config.get("max-episode-len", 0)) > 0:
+        cfg.max_episode_len = int(run_config["max-episode-len"])
+    if str(run_config.get("hidden-units", "")):
+        hu = str(run_config["hidden-units"])
+        if hu and "," in hu:
+            cfg.hidden_units = tuple(int(x.strip()) for x in hu.split(","))
+    if str(run_config.get("activation", "")):
+        act = str(run_config["activation"])
+        if act in ("ReLU", "Tanh"):
+            cfg.activation = act
+
     byzantine_ratio = num_byzantine / num_workers if num_workers > 0 else 0.0
 
     # Auto-start dashboard
@@ -336,6 +362,7 @@ def server_fn(context: Context):
                 byzantine_ratio=byzantine_ratio,
                 use_adaptive_batch=use_fedpg_br,
                 method=method,
+                config=cfg,
             )
     else:
         strategy = FedPGStrategy(
@@ -344,6 +371,7 @@ def server_fn(context: Context):
             byzantine_ratio=byzantine_ratio,
             use_adaptive_batch=use_fedpg_br,
             method=method,
+            config=cfg,
         )
 
     config = ServerConfig(num_rounds=num_rounds)

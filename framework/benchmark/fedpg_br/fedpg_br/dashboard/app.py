@@ -73,7 +73,7 @@ def get_status():
         {
             "active_clients": len(active_clients),
             "current_round": current_round,
-            "total_rounds": 50,  # TODO: Get from config
+            "total_rounds": 50,
             "status": "running" if active_clients else "idle",
         }
     )
@@ -137,6 +137,15 @@ def handle_start_experiment(data):
     num_byzantine = int(data.get("num_byzantine", 0))
     num_rounds = int(data.get("num_rounds", 312))
     attack_type = data.get("attack_type", "none")
+    batch_size = data.get("batch_size")
+    learning_rate = data.get("learning_rate")
+    sigma = data.get("sigma")
+    gamma = data.get("gamma")
+    mini_batch_size = data.get("mini_batch_size")
+    delta = data.get("delta")
+    max_episode_len = data.get("max_episode_len")
+    hidden_units = data.get("hidden_units")
+    activation = data.get("activation")
 
     use_fedpg_br = "true" if method == "fedpg-br" else "false"
     attack_cfg = attack_type if attack_type != "none" else "random-noise"
@@ -147,6 +156,24 @@ def handle_start_experiment(data):
         f"num-byzantine={num_byzantine} use-fedpg-br={use_fedpg_br} "
         f"attack-type='{attack_cfg}'"
     )
+    if batch_size:
+        run_config += f" batch-size={int(batch_size)}"
+    if learning_rate:
+        run_config += f" lr={float(learning_rate)}"
+    if sigma:
+        run_config += f" sigma={float(sigma)}"
+    if gamma:
+        run_config += f" gamma={float(gamma)}"
+    if mini_batch_size:
+        run_config += f" mini-batch-size={int(mini_batch_size)}"
+    if delta:
+        run_config += f" delta={float(delta)}"
+    if max_episode_len:
+        run_config += f" max-episode-len={int(max_episode_len)}"
+    if hidden_units:
+        run_config += f" hidden-units='{hidden_units}'"
+    if activation:
+        run_config += f" activation='{activation}'"
 
     # Find the project root (where pyproject.toml is)
     project_root = Path(__file__).resolve().parent.parent.parent
@@ -335,9 +362,17 @@ def start_dashboard(host: str = "0.0.0.0", port: int = 5000, results_dir: str = 
         port: Port to listen on
         results_dir: Directory containing results
     """
+    import webbrowser
+    import threading
+
     init_dashboard(results_dir)
-    print(f"\n🚀 FedPG-BR Dashboard starting at http://{host}:{port}")
-    print(f"📊 Open your browser to view real-time training metrics\n")
+
+    url = f"http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}/experiment"
+    print(f"\n🚀 FedPG-BR Dashboard starting at {url}")
+
+    # Open browser after a short delay to let the server start
+    if not os.environ.get("RUNNING_IN_DOCKER"):
+        threading.Timer(1.5, webbrowser.open, args=[url]).start()
 
     socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
 
