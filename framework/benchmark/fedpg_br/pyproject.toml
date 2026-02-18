@@ -13,18 +13,9 @@ dependencies = [
     "numpy>=1.21.0",
     "gymnasium[box2d]>=0.26.0",
     "chardet",
-    "typer>=0.9.0",
-    "rich>=13.0.0",
-    "pyyaml>=6.0",
-    "pydantic>=2.0",
-    "tomli>=2.0.0",
 ]
 
 [project.optional-dependencies]
-benchmark = [
-    "plotext>=5.0.0",
-    "pandas>=1.5.0",
-]
 dashboard = [
     "flask>=2.3.0",
     "flask-cors>=4.0.0",
@@ -33,7 +24,6 @@ dashboard = [
 ]
 
 [project.scripts]
-fedpg-benchmark = "fedpg_br.benchmark.cli:app"
 fedpg-dashboard = "fedpg_br.dashboard:start_dashboard"
 fedpg-server = "fedpg_br.deploy_server:start_server"
 fedpg-client = "fedpg_br.deploy_client:start_client"
@@ -56,9 +46,6 @@ num-byzantine = 0
 attack-type = "random-noise"
 use-fedpg-br = false
 method = "fedpg-br"
-enable-benchmark = false
-benchmark-run-id = ""
-benchmark-results-dir = ""
 # Advanced tuning (overridable from dashboard)
 batch-size = 0
 lr = 0.0

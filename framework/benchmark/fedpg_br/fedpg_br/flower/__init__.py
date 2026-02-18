@@ -1,2 +1,1 @@
-"""Flower integration."""
-from fedpg_br.flower.worker import Worker
+"""Flower integration for federated training workers."""

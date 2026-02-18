@@ -4,13 +4,10 @@ import numpy as np
 import torch
 import gymnasium as gym
 from gymnasium.spaces import Discrete
-from typing import List, Tuple, Optional
+from typing import Any, List, Tuple, Optional
 
 from fedpg_br.policy import MlpPolicy, DiagonalGaussianMlpPolicy
-from fedpg_br.core.attacks import (
-    apply_attack, reset_attack_state, AttackConfig,
-    ATTACK_REGISTRY, PAPER_ATTACK_TYPES
-)
+from fedpg_br.core.attacks import apply_attack, AttackConfig
 
 
 class Worker:
@@ -36,11 +33,12 @@ class Worker:
         
         # Create environment
         self.env = gym.make(env_name)
-        obs_dim = self.env.observation_space.shape[0]
+        assert self.env.observation_space.shape is not None
+        obs_dim = int(self.env.observation_space.shape[0])
         
         # Create policy based on action space type
         if isinstance(self.env.action_space, Discrete):
-            action_dim = self.env.action_space.n
+            action_dim = int(self.env.action_space.n)
             self.policy = MlpPolicy(
                 [obs_dim] + list(hidden_units) + [action_dim], 
                 activation, 
@@ -48,7 +46,8 @@ class Worker:
             )
             self.is_discrete = True
         else:
-            action_dim = self.env.action_space.shape[0]
+            assert self.env.action_space.shape is not None
+            action_dim = int(self.env.action_space.shape[0])
             self.policy = DiagonalGaussianMlpPolicy(
                 [obs_dim] + list(hidden_units) + [action_dim], 
                 activation
@@ -61,7 +60,7 @@ class Worker:
         if self.is_byzantine:
             print(f"Worker {worker_id}: Byzantine agent with attack '{attack_type}'")
     
-    def _sample_action(self, state_tensor: torch.Tensor, sample: bool = True) -> Tuple[any, torch.Tensor]:
+    def _sample_action(self, state_tensor: torch.Tensor, sample: bool = True) -> Tuple[Any, torch.Tensor]:
         """Sample action, potentially using random action for RA attack."""
         
         # Random Action (RA) attack: ignore policy, take random actions
@@ -110,24 +109,19 @@ class Worker:
             episode_rewards = []
             episode_log_probs = []
             
-            for step in range(self.max_episode_len):
+            for _ in range(self.max_episode_len):
                 state_tensor = torch.as_tensor(state, dtype=torch.float32).to(self.device)
                 
                 # Get action (potentially random for RA attack)
                 action, log_prob = self._sample_action(state_tensor, sample=sample)
                 
                 # Environment step
-                step_result = self.env.step(action)
-                if len(step_result) == 5:
-                    state, reward, terminated, truncated, _ = step_result
-                    done = terminated or truncated
-                else:
-                    state, reward, done, _ = step_result
-                
-                episode_rewards.append(reward)
+                state, reward, terminated, truncated, _ = self.env.step(action)
+
+                episode_rewards.append(float(reward))
                 episode_log_probs.append(log_prob)
-                
-                if done:
+
+                if terminated or truncated:
                     break
             
             # Apply reward-based attacks
@@ -161,7 +155,7 @@ class Worker:
         loss.backward()
         
         # Extract gradients
-        gradients = [param.grad.clone() for param in self.policy.parameters()]
+        gradients = [param.grad.clone() for param in self.policy.parameters() if param.grad is not None]
         
         # Apply gradient-based Byzantine attacks
         if self.is_byzantine and self.attack_type is not None:
@@ -174,7 +168,7 @@ class Worker:
                     config=self.attack_config
                 )
         
-        return gradients, loss.item(), np.mean(all_returns), np.mean(all_lengths)
+        return gradients, float(loss.item()), float(np.mean(all_returns)), float(np.mean(all_lengths))
     
     def evaluate(self, num_episodes: int = 10, max_steps: int = 1000) -> Tuple[float, float]:
         """Evaluate current policy without exploration.
@@ -194,21 +188,17 @@ class Worker:
             state = reset_result[0] if isinstance(reset_result, tuple) else reset_result
             episode_reward = 0.0
             
+            step = 0
             for step in range(max_steps):
                 state_tensor = torch.as_tensor(state, dtype=torch.float32).to(self.device)
                 
                 with torch.no_grad():
                     action, _ = self.policy(state_tensor, sample=False)
                 
-                step_result = self.env.step(action)
-                if len(step_result) == 5:
-                    state, reward, terminated, truncated, _ = step_result
-                    done = terminated or truncated
-                else:
-                    state, reward, done, _ = step_result
-                
-                episode_reward += reward
-                if done:
+                state, reward, terminated, truncated, _ = self.env.step(action)
+
+                episode_reward += float(reward)
+                if terminated or truncated:
                     break
             
             total_reward += episode_reward

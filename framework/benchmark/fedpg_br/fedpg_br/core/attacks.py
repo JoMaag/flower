@@ -8,10 +8,9 @@ Attack types implemented:
 5. Variance Attack (VA): Exploits high variance in gradient estimation (Appendix G.2)
 """
 
-import numpy as np
 import torch
 from typing import List, Optional, Dict, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

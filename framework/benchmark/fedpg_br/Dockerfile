@@ -21,8 +21,8 @@ RUN pip install --no-cache-dir -e ".[dashboard]"
 
 # Expose ports
 # 8080 - Flower server
-# 5000 - Web dashboard
-EXPOSE 8080 5000
+# 8050 - Web dashboard
+EXPOSE 8080 8050
 
 # Default command (can be overridden in docker-compose)
 CMD ["python", "-m", "fedpg_br.deploy_server", "--host", "0.0.0.0"]

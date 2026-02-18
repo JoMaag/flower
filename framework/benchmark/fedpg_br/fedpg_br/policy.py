@@ -38,7 +38,7 @@ class MlpPolicy(nn.Module):
         elif sample:
             action = dist.sample()
         else:
-            action = dist.probs.argmax()
+            action = torch.argmax(logits)
         return action.item(), dist.log_prob(action)
     
     def get_flat_params(self) -> torch.Tensor:

@@ -33,14 +33,17 @@ class SVRPG(AggregationStrategy):
         from fedpg_br.core.trajectory import sample_trajectory, compute_returns
         from fedpg_br.core.gradient import compute_policy_gradient, compute_log_probs
 
+        if env is None:
+            raise ValueError("SVRPG server_update requires an env for SCSG sampling")
+
         p_geom = config.mini_batch_size / (config.batch_size + config.mini_batch_size)
         N_t = np.random.geometric(p_geom)
 
         theta_t_n = theta_t_0.clone()
         actual_steps = 0
 
-        state_dim = policy.state_dim if hasattr(policy, 'state_dim') else None
-        action_dim = policy.action_dim if hasattr(policy, 'action_dim') else None
+        state_dim = policy.sizes[0]
+        action_dim = policy.sizes[-1]
 
         for n in range(N_t):
             # SCSG step
@@ -68,7 +71,7 @@ class SVRPG(AggregationStrategy):
                 loss_0 = -(log_probs_0 * returns * ratios).mean()
                 policy_0.zero_grad()
                 loss_0.backward()
-                grad_old = torch.cat([p.grad.flatten().clone() for p in policy_0.parameters()])
+                grad_old = torch.cat([p.grad.flatten().clone() for p in policy_0.parameters() if p.grad is not None])
                 all_grad_new.append(grad_new)
                 all_grad_old.append(grad_old)
 

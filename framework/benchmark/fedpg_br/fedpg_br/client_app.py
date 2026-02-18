@@ -25,7 +25,7 @@ class FedPGClient(NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
-        batch_size = config.get("batch_size", 16)
+        batch_size = int(config.get("batch_size", 16))
 
         grad_list, loss, avg_return, avg_length = self.worker.compute_gradient(batch_size, sample=True)
         gradient_numpy = [g.cpu().numpy() for g in grad_list]
@@ -40,7 +40,7 @@ class FedPGClient(NumPyClient):
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
-        num_episodes = config.get("num_episodes", 10)
+        num_episodes = int(config.get("num_episodes", 10))
         avg_reward, avg_length = self.worker.evaluate(num_episodes)
         return float(-avg_reward), num_episodes, {"avg_reward": float(avg_reward)}
 
@@ -70,7 +70,7 @@ class AdaptiveFedPGClient(FedPGClient):
 
         # Train locally
         self.set_parameters(parameters)
-        batch_size = config.get("batch_size", 16)
+        batch_size = int(config.get("batch_size", 16))
 
         grad_list, loss, avg_return, avg_length = self.worker.compute_gradient(batch_size, sample=True)
         gradient_numpy = [g.cpu().numpy() for g in grad_list]
@@ -161,7 +161,10 @@ class AdaptiveFedPGClient(FedPGClient):
 
         else:
             # Default to L2
-            return self._compute_divergence_l2(params1, params2)
+            total_diff = 0.0
+            for p1, p2 in zip(params1, params2):
+                total_diff += np.sum((p1 - p2) ** 2)
+            return float(np.sqrt(total_diff))
 
 
 def client_fn(context: Context):

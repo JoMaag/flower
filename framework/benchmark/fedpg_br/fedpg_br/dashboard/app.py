@@ -3,7 +3,6 @@
 Real-time visualization of federated learning with multiple clients.
 """
 
-import json
 import os
 import re
 import subprocess
@@ -13,11 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
-
-from fedpg_br.benchmark.results_store import ResultsStore
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "fedpg-br-secret"
@@ -28,21 +25,14 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 active_clients: Dict[str, dict] = {}
 training_metrics: List[dict] = []
 current_round = 0
-results_store = None
 _experiment_process: Optional[subprocess.Popen] = None
 _experiment_thread: Optional[threading.Thread] = None
 
 
-def init_dashboard(results_dir: str = "results"):
-    """Initialize dashboard with results store."""
-    global results_store
-    results_store = ResultsStore(f"{results_dir}/.benchmark_db.sqlite")
-
-
 @app.route("/")
 def index():
-    """Serve main dashboard page."""
-    return render_template("dashboard.html")
+    """Redirect to experiment dashboard."""
+    return redirect("/experiment")
 
 
 @app.route("/experiment")
@@ -88,39 +78,13 @@ def get_clients():
 @app.route("/api/metrics")
 def get_metrics():
     """Get training metrics history."""
-    # Get latest metrics from database
-    if results_store:
-        # Get latest run
-        runs = results_store.list_runs(limit=1)
-        if runs:
-            run_id = runs[0]["run_id"]
-            metrics = results_store.get_metric_timeseries(run_id, "avg_reward")
-            return jsonify(
-                [{"round": r, "value": v} for r, v in metrics]
-            )
     return jsonify(training_metrics)
-
-
-@app.route("/api/runs")
-def get_runs():
-    """Get list of all training runs."""
-    if results_store:
-        runs = results_store.list_runs(limit=10)
-        return jsonify(runs)
-    return jsonify([])
 
 
 @socketio.on("connect")
 def handle_connect():
     """Handle client connection."""
-    print(f"Client connected: {request.sid}")
     emit("status", {"message": "Connected to FedPG-BR dashboard"})
-
-
-@socketio.on("disconnect")
-def handle_disconnect():
-    """Handle client disconnection."""
-    print(f"Client disconnected: {request.sid}")
 
 
 @socketio.on("start_experiment")
@@ -354,21 +318,18 @@ def handle_metrics_update(data):
     socketio.emit("metrics", metric_entry)
 
 
-def start_dashboard(host: str = "0.0.0.0", port: int = 5000, results_dir: str = "results"):
+def start_dashboard(host: str = "0.0.0.0", port: int = 8050):
     """Start the web dashboard server.
 
     Args:
         host: Host address to bind to
         port: Port to listen on
-        results_dir: Directory containing results
     """
     import webbrowser
     import threading
 
-    init_dashboard(results_dir)
-
     url = f"http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}/experiment"
-    print(f"\n🚀 FedPG-BR Dashboard starting at {url}")
+    print(f"\n FedPG-BR Dashboard starting at {url}")
 
     # Open browser after a short delay to let the server start
     if not os.environ.get("RUNNING_IN_DOCKER"):

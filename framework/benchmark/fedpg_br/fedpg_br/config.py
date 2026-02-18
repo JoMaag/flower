@@ -89,8 +89,13 @@ def get_config(env_name: str) -> Config:
 
 def get_env_info(env_name: str) -> dict:
     env = gym.make(env_name)
-    state_dim = env.observation_space.shape[0]
-    action_dim = env.action_space.n if isinstance(env.action_space, gym.spaces.Discrete) else env.action_space.shape[0]
+    assert env.observation_space.shape is not None
+    state_dim = int(env.observation_space.shape[0])
+    if isinstance(env.action_space, gym.spaces.Discrete):
+        action_dim = int(env.action_space.n)
+    else:
+        assert env.action_space.shape is not None
+        action_dim = int(env.action_space.shape[0])
     is_continuous = not isinstance(env.action_space, gym.spaces.Discrete)
     env.close()
     return {"state_dim": state_dim, "action_dim": action_dim, "is_continuous": is_continuous}

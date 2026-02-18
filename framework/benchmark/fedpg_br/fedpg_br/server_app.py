@@ -57,7 +57,7 @@ class FedPGStrategy(Strategy):
         )
 
         self.env = gym.make(env_name)
-        self.theta_t_0 = None
+        self.theta_t_0: torch.Tensor = self.policy.get_flat_params().clone()
         self._current_batch_size = self.config.batch_size
 
         log(INFO, f"Method: {self.method.upper()}")
@@ -76,8 +76,8 @@ class FedPGStrategy(Strategy):
             self._current_batch_size = self.config.batch_size
         
         clients = client_manager.sample(num_clients=self.num_agents, min_num_clients=self.num_agents)
-        config = {"batch_size": int(self._current_batch_size), "round": server_round}
-        fit_ins = fl.common.FitIns(parameters, config)
+        fit_config: Dict[str, Scalar] = {"batch_size": int(self._current_batch_size), "round": server_round}
+        fit_ins = fl.common.FitIns(parameters, fit_config)
         return [(client, fit_ins) for client in clients]
     
     def aggregate_fit(self, server_round: int, results: List[Tuple[ClientProxy, FitRes]],
@@ -97,7 +97,7 @@ class FedPGStrategy(Strategy):
                 skipped_count += 1
                 # Track divergence metrics from skipped clients
                 if "divergence" in fit_res.metrics:
-                    total_divergence += fit_res.metrics["divergence"]
+                    total_divergence += float(fit_res.metrics["divergence"])
 
         # If all clients skipped, return current parameters unchanged
         if not active_results:
@@ -223,13 +223,13 @@ class FedPGStrategy(Strategy):
             loss_0 = -(log_probs_0 * returns * ratios).mean()
             policy_0.zero_grad()
             loss_0.backward()
-            grad_old = torch.cat([p.grad.flatten().clone() for p in policy_0.parameters()])
+            grad_old = torch.cat([p.grad.flatten().clone() for p in policy_0.parameters() if p.grad is not None])
             
             all_grad_new.append(grad_new)
             all_grad_old.append(grad_old)
         
         v_t_n = torch.mean(torch.stack(all_grad_new), dim=0) - torch.mean(torch.stack(all_grad_old), dim=0) + mu_t
-        return v_t_n, np.mean(all_ratios)
+        return v_t_n, float(np.mean(all_ratios))
     
     def configure_evaluate(self, server_round: int, parameters: Parameters, client_manager):
         if server_round % 10 != 0:
@@ -241,17 +241,17 @@ class FedPGStrategy(Strategy):
         if not results:
             return None, {}
         rewards = [float(-res.loss) for _, res in results]
-        avg = np.mean(rewards)
+        avg = float(np.mean(rewards))
         log(INFO, f"Round {server_round}: Avg Reward = {avg:.2f}")
-        return float(-avg), {"avg_reward": avg}
+        return -avg, {"avg_reward": avg}
     
     def evaluate(self, server_round: int, parameters: Parameters):
         rewards = []
         for _ in range(10):
             _, reward = sample_trajectory(self.env, self.policy)
             rewards.append(reward)
-        avg = np.mean(rewards)
-        return float(-avg), {"server_avg_reward": avg}
+        avg = float(np.mean(rewards))
+        return -avg, {"server_avg_reward": avg}
 
 
 _dashboard_started = False
@@ -270,14 +270,14 @@ def _start_dashboard_background():
 
         def run():
             try:
-                socketio.run(flask_app, host="127.0.0.1", port=5000,
+                socketio.run(flask_app, host="127.0.0.1", port=8050,
                              debug=False, allow_unsafe_werkzeug=True, log_output=False)
             except Exception:
                 pass  # Dashboard is optional, don't crash the server
 
         t = threading.Thread(target=run, daemon=True)
         t.start()
-        log(INFO, "Dashboard started at http://127.0.0.1:5000/experiment")
+        log(INFO, "Dashboard started at http://127.0.0.1:8050/experiment")
     except ImportError:
         log(INFO, "Dashboard not available (install flask: pip install -e '.[dashboard]')")
 
@@ -292,8 +292,6 @@ def server_fn(context: Context):
     num_byzantine = int(run_config.get("num-byzantine", 0))
     use_fedpg_br = bool(run_config.get("use-fedpg-br", False))
     method = str(run_config.get("method", "fedpg-br" if use_fedpg_br else "gomdp"))
-    enable_benchmark = str(run_config.get("enable-benchmark", "false")).lower() == "true"
-
     # Override config with dashboard-provided advanced settings
     cfg = get_config(env_name)
     if int(run_config.get("batch-size", 0)) > 0:
@@ -326,53 +324,14 @@ def server_fn(context: Context):
 
     log(INFO, f"FedPG-BR Server: env={env_name}, workers={num_workers}, byzantine={num_byzantine}, method={method}")
 
-    # Check if benchmark metrics collection is enabled
-    if enable_benchmark:
-        # Import benchmark components (lazy import to avoid dependency issues)
-        try:
-            from fedpg_br.benchmark.wrappers import InstrumentedFedPGStrategy
-            from fedpg_br.benchmark.metrics_collector import MetricsCollector
-
-            # Get run ID and results directory from config
-            run_id = str(run_config.get("benchmark-run-id", "unknown"))
-            results_dir = str(run_config.get("benchmark-results-dir", "."))
-
-            log(INFO, f"Benchmark mode enabled: run_id={run_id}, results_dir={results_dir}")
-
-            # Create metrics collector in this process with file-based storage
-            metrics_collector = MetricsCollector(run_id, results_dir=results_dir)
-
-            # Create instrumented strategy
-            strategy = InstrumentedFedPGStrategy(
-                metrics_collector=metrics_collector,
-                env_name=env_name,
-                num_agents=num_workers,
-                byzantine_ratio=byzantine_ratio,
-                use_adaptive_batch=use_fedpg_br,
-                method=method,
-            )
-
-            log(INFO, "Using InstrumentedFedPGStrategy with metrics collection")
-
-        except ImportError as e:
-            log(INFO, f"Warning: Benchmark components not available ({e}), using standard strategy")
-            strategy = FedPGStrategy(
-                env_name=env_name,
-                num_agents=num_workers,
-                byzantine_ratio=byzantine_ratio,
-                use_adaptive_batch=use_fedpg_br,
-                method=method,
-                config=cfg,
-            )
-    else:
-        strategy = FedPGStrategy(
-            env_name=env_name,
-            num_agents=num_workers,
-            byzantine_ratio=byzantine_ratio,
-            use_adaptive_batch=use_fedpg_br,
-            method=method,
-            config=cfg,
-        )
+    strategy = FedPGStrategy(
+        env_name=env_name,
+        num_agents=num_workers,
+        byzantine_ratio=byzantine_ratio,
+        use_adaptive_batch=use_fedpg_br,
+        method=method,
+        config=cfg,
+    )
 
     config = ServerConfig(num_rounds=num_rounds)
     return fl.server.ServerAppComponents(strategy=strategy, config=config)

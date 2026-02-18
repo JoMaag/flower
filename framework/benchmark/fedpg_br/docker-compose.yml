@@ -8,13 +8,13 @@
 #   NUM_WORKERS=10 NUM_BYZANTINE=3 docker-compose up     # Add Byzantine agents
 
 services:
-  # Web Dashboard - monitoring UI at http://localhost:5000/experiment
+  # Web Dashboard - monitoring UI at http://localhost:8050/experiment
   dashboard:
     build: .
     container_name: fedpg-dashboard
     command: python -m fedpg_br.dashboard.app
     ports:
-      - "5000:5000"
+      - "8050:8050"
     networks:
       - fedpg-network
     environment:

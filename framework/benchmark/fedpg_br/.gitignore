@@ -37,6 +37,3 @@ results/
 # Coverage
 .coverage
 htmlcov/
-
-# Jupyter
-.ipynb_checkpoints/
