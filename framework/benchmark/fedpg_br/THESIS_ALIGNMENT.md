@@ -15,7 +15,7 @@ Your tool is built on Flower.ai and demonstrates understanding of federated RL f
 **You have:**
 - ✅ Flower.ai installed and configured
 - ✅ Gymnasium environments integrated (CartPole, LunarLander, etc.)
-- ✅ Custom traffic light environment (`fedpg_br/envs/traffic_light_env.py`)
+- ✅ Custom traffic light environment (`frl_benchmark/envs/traffic_light_env.py`)
 - ✅ Independent RL baseline (each client trains locally)
 - ✅ Easy to add more environments
 
@@ -37,7 +37,7 @@ Your tool is built on Flower.ai and demonstrates understanding of federated RL f
 - ✅ Policy gradient aggregation
 - ✅ Byzantine robustness (FedPG-BR extension)
 
-**Location:** `fedpg_br/strategy.py`
+**Location:** `frl_benchmark/strategy.py`
 
 **Plus:** Plugin system for easy comparison with other strategies!
 
@@ -85,7 +85,7 @@ fedpg-benchmark run afedpg_config.toml
 - ✅ **30-35% improvement demonstrated**
 
 **Files:**
-- Environment: `fedpg_br/envs/traffic_light_env.py`
+- Environment: `frl_benchmark/envs/traffic_light_env.py`
 - Demo: `run_traffic_demo.py`
 - Guide: `TRAFFIC_DEMO.md`
 
@@ -100,7 +100,7 @@ fedpg-benchmark run afedpg_config.toml
 **Status:** PARTIAL - Flask Dashboard (not Streamlit)
 
 **You have:**
-- ✅ Flask web dashboard (`fedpg_br/dashboard/`)
+- ✅ Flask web dashboard (`frl_benchmark/dashboard/`)
 - ✅ Real-time metrics visualization
 - ✅ Per-client status
 - ✅ Live training charts
@@ -108,7 +108,7 @@ fedpg-benchmark run afedpg_config.toml
 
 **What you have (Flask):**
 ```bash
-python -m fedpg_br.dashboard.app
+python -m frl_benchmark.dashboard.app
 # Opens at http://localhost:5000
 ```
 
@@ -117,7 +117,7 @@ python -m fedpg_br.dashboard.app
 # streamlit_dashboard.py
 import streamlit as st
 import plotly.graph_objects as go
-from fedpg_br.benchmark.results_store import ResultsStore
+from frl_benchmark.benchmark.results_store import ResultsStore
 
 st.title("FedRL Training Dashboard")
 
@@ -145,7 +145,7 @@ st.plotly_chart(fig)
 
 **To add W&B integration:**
 
-Create `fedpg_br/benchmark/wandb_logger.py`:
+Create `frl_benchmark/benchmark/wandb_logger.py`:
 ```python
 import wandb
 

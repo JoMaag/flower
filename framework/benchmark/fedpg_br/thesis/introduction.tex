@@ -1,0 +1,152 @@
+% Some commands used in this file
+\newcommand{\package}{\emph}
+
+\chapter{Introduction}
+
+This is version \verb-v2.0- of the template.
+
+We assume that you found this template on our institute's website, so
+we do not repeat everything stated there (although some things 
+are repeated for your convenience as far as \LaTeX{} code is concerned).
+Consult the website again for pointers to further reading about \LaTeX{}.  This chapter only
+gives a brief overview of the files you are looking at. Before we start, we would like to point 
+out that once you read all the information, you can switch the flag \lstinline|studentwriting| (found in \lstinline|thesis.tex|) to true so that you start with a cleaner template
+(basically starting from~\Cref{ch:paper_introduction}) in which you can fill in your thesis content.
+
+\section{Features}
+\label{sec:features}
+
+The rest of this document shows off a few features of the template
+files.  Look at the source code to see which macros we used!
+
+The template is divided into \TeX{} files as follows:
+\begin{enumerate}
+\item \texttt{thesis.tex} is the main file.
+\item \texttt{extrapackages.tex} holds extra package includes.
+\item \texttt{layoutsetup.tex} defines the style used in this document.
+\item \texttt{theoremsetup.tex} declares the theorem-like environments.
+\item \texttt{macrosetup.tex} defines extra macros that you may find
+  useful.
+\item \texttt{introduction.tex} contains this text.
+\item \texttt{sections.tex} is a quick demo of each sectioning level
+  available (not included in the pdf, but you can consult it).
+\item \texttt{refs.bib} is an example bibliography file.  You can use
+  Bib\TeX{} to quote references.  For example, read
+  \cite{bringhurst1996ets} if you can get a hold of it.
+\end{enumerate}
+
+
+\subsection{Extra package includes}
+
+The file \texttt{extrapackages.tex} lists some packages that usually
+come in handy.  Simply have a look at the source code.  We have
+added the following comments based on our experiences:
+\begin{description}
+\item[REC] This package is recommended.
+\item[OPT] This package is optional.  It usually solves a specific
+  problem in a clever way.
+\item[ADV] This package is for the advanced user, but solves a problem
+  frequent enough that we mention it. Consult the package's
+  documentation.
+\end{description}
+
+As a small example, here is a reference to the Section \emph{Features}
+typeset with the recommended \package{cleverref} package. As the name implies,
+this package cleverly identifies what the thing it is referring to is (Section, Theorem, Remark, etc.).
+Note that we have not typed the word `Section' in the \LaTeX{} code.
+See the code after \lstinline|\usepackage{cleveref}| in the \lstinline|thesis.tex| file for details.
+\begin{quote}
+  See~\Cref{sec:features}.
+\end{quote}
+
+
+\subsection{Layout setup}
+
+This defines the overall look of the document -- for example, it
+changes the chapter and section heading appearance.  We consider this
+a `do not touch' area.  Take a look at the excellent 
+\href{https://ctan.math.washington.edu/tex-archive/macros/latex/contrib/memoir/memman.pdf}{\emph{Memoir}
+documentation} before changing it.
+
+
+\subsection{Theorem setup}
+
+This file defines a bunch of theorem-like environments.
+
+\begin{lemma}\label{lem:example}
+  An example lemma.
+\end{lemma}
+
+\begin{proof}
+  Proof text goes here.
+\end{proof}
+
+Note that the q.e.d.\ symbol moves to the correct place automatically (because of \lstinline|ntheorem|)
+if you end the proof with an \texttt{enumerate} or
+\texttt{displaymath}.  You do not need to use \verb-\qedhere- as with
+\package{amsthm}.
+
+\begin{theorem}[Some Famous Guy]\label{theorem:example}
+  An example theorem.
+\end{theorem}
+
+\begin{proof}
+  This proof
+  \begin{enumerate}
+  \item ends in an enumerate.
+  \end{enumerate}
+\end{proof}
+
+\begin{proposition}
+  Note that all theorem-like environments are by default numbered on
+  the same counter, i.e.\ we have~\Cref{lem:example} and then~\Cref{theorem:example}.
+\end{proposition}
+
+\begin{proof}
+  This proof ends in a display like so:
+  \begin{displaymath}
+    f(x) = x^2.
+  \end{displaymath}
+\end{proof}
+
+
+\subsection{Macro setup}
+
+In the macro setup file we show how to define some basic macros,
+and how to use a neat feature of the \package{mathtools} package:
+\begin{displaymath}
+  \abs{a}, \quad \abs*{\frac{a}{b}}, \quad \abs[\big]{\frac{a}{b}}.
+\end{displaymath}
+
+What is happening above is that whatever goes into the \lstinline|\abs| command gets
+surrounded with vertical bars. If you add a \lstinline|*| to the command, it sizes the 
+bars automatically to cover the whole expression. Or you can pass an argument to 
+set the size yourself (i.e. \lstinline|\big|, \lstinline|\biggg|, \lstinline|\Bigg|, etc.), which is a good approach in many cases since the automatic version
+is not always the best. We have also given macros for Landau notation.
+\begin{align*}
+  &\Oh{n^2}, \quad \Oh*{n^{\frac{1}{2}}}, \quad \Oh[\Bigg]{n^{\frac{1}{2}}}\\
+  &\Om{n^3}, \quad \Om*{n^{e^{e^{4}}}}, \quad \Om[\big]{\log{n}}\\
+  &\Th{n^4}, \quad \oh*{n^2 + n^{\frac{5n}{\log{n}}}}, \quad \om[\bigg]{\log^2{n}}
+\end{align*}
+When in doubt, use the starred version and then check to see if things look weird. In such 
+cases, experiment with fixed sizes. After a while, you will be able to guess the correct size 
+reliably. An example where it is better to use your own judgement (and which shows the differences
+between automatic sizing with \lstinline|\left(...\right)| and manual with \lstinline|\biggl(...\biggr)| 
+under the hood in our macros):
+\[\left( \sum\limits_{i = 1}^{n} \right)^2.\]
+Compare to the manually-sized:
+\[\biggl( \sum\limits_{i = 1}^{n} \biggr)^2.\]
+An exception to the rule of using the starred version is when writing inline math, where we don't want to use unnecessarily large vertical spacing, because that messes with the line spacing. For more details, see~\Cref{rule:vertical_spacing}.
+Some more macros (it is also not hard to define your own if you need something extra):
+\begin{align*}
+  &\Prob*{v \text{ has degree 5}}, \quad \E*{X}, \quad \Max*{Y}{Z}\\
+  &\Min*{X + Z}{Y + W}, \quad \Exp*{\log{n}}, \quad \Log*{x^{n^{d}}}, \quad \Var*{Z}
+\end{align*}
+We also define an example macro for when one needs to regularly refer to a word with a different font, like the \onemax problem. The use of the \lstinline|\xspace| command is important here, as it allows for correct spacing after the macro, regardless of whether it is followed by punctuation or not, both of which can happen when discussing \onemax.
+
+Another thing we do in this file is to define \lstinline|\eps| to be $\varepsilon$ because this style is more common and nicer to look at (compare $\eps$ to $\epsilon$). 
+We also redefine \lstinline|\phi| to be \lstinline|\varphi| ($\phi$). You can still use the ``old'' versions with \lstinline|\epsilon| and \lstinline|\oldphi| ($\oldphi$). There are other 
+characters that have variations for example, $\rho$ versus $\varrho$. Now that we mention characters, a common mistake is to use $l$
+instead of $\ell$ in math, try to avoid it.
+
+We also define some more macros, which are explained in~\Cref{chapter:mathtips}.

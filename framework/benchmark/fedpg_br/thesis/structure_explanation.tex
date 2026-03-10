@@ -1,0 +1,82 @@
+\chapter{How a Typical Academic Paper is Structured}\label{ch:structure}
+
+Before delving into a concrete example, it is useful to understand the common structure of an academic paper—especially in the fields of computer science and mathematics. While specific requirements can vary across disciplines, journals, or conferences, most technical papers and theses follow a broadly similar organizational pattern. This chapter serves as an overview of that structure, highlighting the purpose and typical contents of each major section.
+
+\section{Preamble}
+\begin{itemize}
+    \item \textbf{Title:} A concise statement reflecting the main topic or contribution. It should be both informative and engaging, often hinting at the central findings or approach.
+    \item \textbf{Acknowledgments:} A short section/chapter to recognize the individuals, organizations, or funding agencies that supported the research. Some publications (conference or journal styles) place this section at the end, while others place it in a footnote on the first page.    
+    \item \textbf{Abstract:} A brief (usually 150--300 words) summary of the paper. The abstract succinctly states the \emph{problem}, the \emph{approach} used to tackle the problem, and the \emph{main results/contributions}. Readers often decide whether to read the entire paper based on the clarity and relevance of the abstract.
+\end{itemize}
+
+\section{Introduction}
+The introduction typically provides:
+\begin{itemize}
+    \item \textbf{Context and Motivation:} Explains why the topic is important, giving background or real-world relevance. The existence of many previous works studying related questions is also sometimes used as further motivation.
+    \item \textbf{Problem Statement:} Defines the core question or problem addressed by the paper.
+    \item \textbf{Prior Work or Background:} Summarizes existing literature and situates the problem within a broader research context. (Some papers have a separate “Related Work” section for more extensive discussion of prior research, if necessary.)
+    \item \textbf{Contributions and Overview:} Concludes by stating what new insight, technique, or theoretical result the paper offers (listing the theorems, possibly restatable), and outlines the paper’s structure to guide readers through the subsequent sections.
+\end{itemize}
+
+\section{Notation and Preliminaries}
+\begin{itemize}
+    \item \textbf{Notation and Definitions:} Introduces the notation, terminology, or foundational concepts essential for understanding the paper’s main results.
+    \item \textbf{Theoretical Tools:} Reviews any theorems, lemmas, or existing results (from probability, linear algebra, combinatorics, etc.) that the paper will rely on.
+    \item \textbf{Contextual Details:} In some fields, this section might include domain-specific information (e.g., details on data models, assumptions about hardware, or historical context). Here you might also more formally define the problem/question studied, in case you opted for a more intuitive explanation in the introduction (which is a good approach).
+\end{itemize}
+
+\section{Main Content (Approach/Analysis)}
+This is usually the largest and most detailed section. Depending on the nature of the work, it might be subdivided in various ways:
+
+\subsection{Algorithm or Method Description}
+\begin{itemize}
+    \item \textbf{High-Level Idea:} An intuitive, conceptual overview of the proposed algorithm or approach.
+    \item \textbf{Pseudocode or Formal Specification:} A step-by-step procedure or equations describing how the algorithm operates or how the proof of the result is structured.
+\end{itemize}
+
+\subsection{Theoretical Analysis}
+\begin{itemize}
+    \item \textbf{Correctness/Runtime/Theorem Proofs:} Here the formal proofs are given in all detail. Typically there is still a storyline to be followed in text to not lose the reader in the math, but each proof environment is now fully formal and self-standing. You can think of the explanations along the way like comments in code and the theorems/proofs as the actual code, which has to follow strict rules.
+\end{itemize}
+
+\subsection{Experimental Results (If Applicable)}
+For more empirically focused papers:
+\begin{itemize}
+    \item \textbf{Dataset Description:} Overview of the data used for experiments, how it was collected, and why it is suitable.
+    \item \textbf{Metrics:} Explanation of how performance or accuracy is measured.
+    \item \textbf{Comparison with Baselines:} Charts, tables, or graphs illustrating how the proposed method stacks up against existing methods.
+\end{itemize}
+
+\section{Conclusion and Future Work}
+The conclusion typically:
+\begin{itemize}
+    \item \textbf{Summarizes Main Findings:} Restates the key contributions and what has been learned.
+    \item \textbf{Discusses Limitations:} Briefly considers conditions or scenarios where the proposed method might not perform as well.
+    \item \textbf{Suggests Future Directions:} Outlines open questions or new problems raised by the work, offering pathways for continued research.
+\end{itemize}
+
+
+\section{References}
+\begin{itemize}
+    \item \textbf{Citations:} Every work mentioned in the paper (including background literature, data sources, and tools) should be cited in a consistently formatted bibliography.
+    \item \textbf{Formatting Style:} Whether it’s APA, IEEE, ACM, Chicago, or another style, references should follow a recognized standard and be clear to the reader. For the thesis (and most CS conferences), you can use the citing style found in this template.
+\end{itemize}
+
+\section{Appendices (If Needed)}
+\begin{itemize}
+    \item \textbf{Supplementary Material:} Large/overly technical proofs, extended data tables, or technical details that disrupt the narrative flow can be placed in appendices to keep the main text concise.
+    \item \textbf{Extended Examples:} Additional or more detailed examples that illustrate nuances of the proposed approach.
+\end{itemize}
+
+\section*{In This Template}
+In the chapters that follow, we demonstrate how these broad guidelines translate into a concrete academic document. You will see:
+\begin{itemize}
+    \item An \textbf{Abstract} that briefly states the problem, the approach, and the main findings.
+    \item An \textbf{Introduction} providing motivation and an overview of prior work.
+    \item A chapter on \textbf{Notation and Preliminaries} that sets up key definitions and outlines the main probabilistic tool—Chebyshev’s inequality—used in the analysis.
+    \item A detailed \textbf{Algorithm and Analysis} section illustrating the design of a randomized median-finding procedure and its theoretical guarantees.
+    \item A concise \textbf{Conclusion} summarizing contributions and suggesting future research directions.
+\end{itemize}
+
+This organization—while slightly customized for our particular focus on randomized selection algorithms—follows the same general principles outlined above. Now that we have an overview of the typical structure, we can move on to our specific example of how these elements come together in a coherent academic work. Note that by default the abstract and title of the ``paper'' are not shown.
+To see them (and also start filling in your thesis content), set the \lstinline|\ifstudentwriting| flag to true in \lstinline|thesis.tex|.

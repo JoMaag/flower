@@ -1,0 +1,102 @@
+
+\chapter{Conclusion}\label{ch:conclusion}
+
+\section*{Summary of Contributions}
+
+This thesis presented the \textbf{Flower FRL Benchmark}, an open-source testbench
+for federated policy gradient research. The benchmark addresses a concrete gap in
+the FedRL ecosystem: while algorithms such as FedPG-BR~\cite{flint2023fedpgbr}
+have established strong theoretical foundations, no shared infrastructure existed
+for reproducing, comparing, or building upon them.
+
+The main contributions of this work are:
+
+\begin{itemize}
+    \item \textbf{A reproducible reference implementation of FedPG-BR.} The
+          benchmark provides a complete implementation of the Byzantine-robust
+          federated policy gradient algorithm, including its probabilistic Byzantine
+          filter and SCSG variance reduction, integrated with the Flower federated
+          learning framework. Experiments can be reproduced from a Docker image
+          with a single command.
+
+    \item \textbf{A strategy plugin system.} Researchers can register a new
+          aggregation strategy using a single Python decorator. The strategy is
+          auto-discovered at runtime and immediately available in the dashboard
+          without any changes to framework code. This lowers the barrier for
+          comparative evaluation of novel FedRL algorithms to the effort of
+          implementing the core aggregation logic.
+
+    \item \textbf{Characterisation of Byzantine filter behaviour under improving
+          policies.} Through empirical evaluation we identified and explained the
+          \emph{filter degradation problem}: FedPG-BR's probabilistic filter,
+          calibrated to gradient statistics at initialisation, increasingly
+          misidentifies honest workers as Byzantine as the policy improves and
+          gradient variance rises. This phenomenon is an inherent consequence of
+          the non-stationarity of FedRL and has direct implications for the choice
+          of $\sigma$ and for algorithm selection.
+
+    \item \textbf{A real-time web dashboard.} The dashboard enables interactive
+          experiment configuration and live reward monitoring without requiring
+          command-line access, making the benchmark accessible to researchers
+          who are new to the Flower ecosystem.
+
+    \item \textbf{Byzantine attack simulation.} Seven attack types from the
+          FedPG-BR paper and related literature are implemented, enabling
+          systematic evaluation of algorithm robustness across a range of adversarial
+          scenarios.
+\end{itemize}
+
+\section*{Limitations}
+
+Several limitations of the current implementation should be noted.
+
+\textbf{Environments with variable episode length.} LunarLander and similar
+environments where episode length grows with policy quality pose a fundamental
+challenge for Flower's simulation mode: as episodes lengthen, rollout time per
+round increases, which can cause worker timeouts. CartPole-v1 and HalfCheetah-v5
+(with their bounded episode lengths) do not suffer from this problem and are
+more reliable benchmarks for the aggregation algorithms studied here.
+
+\textbf{SCSG importance ratio threshold.} The tight ratio window $[0.995, 1.005]$
+used in the SCSG inner loop causes premature termination in practice, rendering
+the variance reduction ineffective in most rounds. A more adaptive or lenient
+threshold would likely improve SVRPG's empirical performance.
+
+\textbf{Single-node simulation.} All workers share the same hardware in
+simulation mode, which introduces resource contention absent in real distributed
+deployments. Wall-clock times and convergence profiles may differ when the
+benchmark is used with actual distributed workers.
+
+\textbf{Fixed random seeds.} The current implementation assigns deterministic
+per-worker seeds (\texttt{client\_id}) but does not expose a global experiment
+seed. Reproducibility across full experiment runs therefore requires attention
+to the random state of the server-side environment and SCSG sampling.
+
+\section*{Future Work}
+
+Several directions present themselves as natural extensions.
+
+\textbf{Adaptive Byzantine filter.} The filter degradation problem suggests that
+$\sigma$ should adapt over the course of training, tracking the evolving gradient
+variance rather than being fixed. An exponential moving average of the observed
+gradient norm distribution could provide a principled adaptive threshold.
+
+\textbf{Asynchronous FedRL.} The current implementation is synchronous: the
+server waits for all $K$ workers before aggregating. Asynchronous variants, where
+the server updates on whatever gradients have arrived, are more resilient to
+slow or failed workers and are an active area of research.
+
+\textbf{Seed configurability.} Adding a global seed parameter to the experiment
+configuration would allow exact reproduction of individual runs, which is
+important for debugging and for producing the averaged convergence curves
+typically reported in academic papers.
+
+\textbf{Contribution to Flower baselines.} The benchmark is designed to be
+compatible with Flower's baselines repository. Submitting it as an official
+Flower baseline would make it discoverable to a wider research community and
+subject it to the framework's standard review process.
+
+\textbf{Additional aggregation strategies.} The plugin system makes it
+straightforward to add further strategies. Coordinate-wise median, geometric
+median, and Krum are standard Byzantine-robust baselines that would complement
+the existing FedPG-BR and SVRPG implementations for a more complete comparison.

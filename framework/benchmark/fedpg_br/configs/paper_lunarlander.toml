@@ -9,7 +9,7 @@ num-server-rounds = 323    # Matches original paper's implementation
 num-workers = 10           # K = 10 agents
 num-byzantine = 0          # α = 0 (no Byzantine for baseline)
 
-# FedPG-BR settings
+# Algorithm settings
 use-fedpg-br = true
 
 # Paper parameters (from original code):

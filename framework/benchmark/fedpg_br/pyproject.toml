@@ -3,40 +3,40 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fedpg-br"
+name = "flower-frl-benchmark"
 version = "0.1.0"
-description = "Fault-Tolerant Federated Reinforcement Learning (FedPG-BR)"
+description = "Flower FRL Benchmark - Federated Reinforcement Learning Testbench"
 requires-python = ">=3.9"
 dependencies = [
     "flwr[simulation]>=1.13.0",
     "torch>=1.12.0",
     "numpy>=1.21.0",
     "gymnasium[box2d]>=0.26.0",
+    "gymnasium[mujoco]>=0.26.0",
     "chardet",
 ]
 
 [project.optional-dependencies]
 dashboard = [
-    "flask>=2.3.0",
+    "flask>=2.3.0,<3.0.0",
     "flask-cors>=4.0.0",
-    "flask-socketio>=5.3.0",
+    "flask-socketio>=5.3.6",
     "python-socketio>=5.9.0",
+    "docker>=6.0.0",
 ]
 
 [project.scripts]
-fedpg-dashboard = "fedpg_br.dashboard:start_dashboard"
-fedpg-server = "fedpg_br.deploy_server:start_server"
-fedpg-client = "fedpg_br.deploy_client:start_client"
+frl-dashboard = "frl_benchmark.dashboard:start_dashboard"
 
 [tool.hatch.build.targets.wheel]
-packages = ["fedpg_br"]
+packages = ["frl_benchmark"]
 
 [tool.flwr.app]
-publisher = "fedpg-br"
+publisher = "flower-frl-benchmark"
 
 [tool.flwr.app.components]
-serverapp = "fedpg_br.server_app:app"
-clientapp = "fedpg_br.client_app:app"
+serverapp = "frl_benchmark.server_app:app"
+clientapp = "frl_benchmark.client_app:app"
 
 [tool.flwr.app.config]
 env = "LunarLander-v3"
@@ -54,6 +54,7 @@ gamma = 0.0
 mini-batch-size = 0
 delta = 0.0
 max-episode-len = 0
+round-timeout = 600
 hidden-units = ""
 activation = ""
 # Adaptive communication settings
