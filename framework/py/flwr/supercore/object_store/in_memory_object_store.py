@@ -17,15 +17,14 @@
 
 import threading
 from dataclasses import dataclass
-from typing import Optional
 
-from flwr.common.inflatable import (
+from flwr.proto.message_pb2 import ObjectTree  # pylint: disable=E0611
+from flwr.supercore.inflatable.inflatable_object import (
     get_object_id,
     is_valid_sha256_hash,
     iterate_object_tree,
 )
-from flwr.common.inflatable_utils import validate_object_content
-from flwr.proto.message_pb2 import ObjectTree  # pylint: disable=E0611
+from flwr.supercore.inflatable.inflatable_utils import validate_object_content
 
 from .object_store import NoObjectInStoreError, ObjectStore
 
@@ -154,7 +153,7 @@ class InMemoryObjectStore(ObjectStore):
             self.store[object_id].content = object_content
             self.store[object_id].is_available = True
 
-    def get(self, object_id: str) -> Optional[bytes]:
+    def get(self, object_id: str) -> bytes | None:
         """Get an object from the store."""
         with self.lock_store:
             # Check if the object ID is pre-registered

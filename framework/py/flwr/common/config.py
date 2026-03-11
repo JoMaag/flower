@@ -15,47 +15,29 @@
 """Provide functions for managing global Flower config."""
 
 
-import os
 import re
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import IO, Any, Optional, TypeVar, Union, cast, get_args
+from typing import IO, Any, TypeVar, cast, get_args
 
+import click
 import tomli
-import typer
 
-from flwr.common.constant import (
-    APP_DIR,
-    FAB_CONFIG_FILE,
-    FAB_HASH_TRUNCATION,
-    FLWR_DIR,
-    FLWR_HOME,
-)
-from flwr.common.typing import Run, UserConfig, UserConfigValue
+from flwr.app.user_config import UserConfig, UserConfigValue
+from flwr.common.constant import APP_DIR, FAB_CONFIG_FILE, FAB_HASH_TRUNCATION
+from flwr.common.typing import Run
+from flwr.supercore.utils import get_flwr_home
 
 from . import ConfigRecord, object_ref
 
 T_dict = TypeVar("T_dict", bound=dict[str, Any])  # pylint: disable=invalid-name
 
 
-def get_flwr_dir(provided_path: Optional[str] = None) -> Path:
-    """Return the Flower home directory based on env variables."""
-    if provided_path is None or not Path(provided_path).is_dir():
-        return Path(
-            os.getenv(
-                FLWR_HOME,
-                Path(f"{os.getenv('XDG_DATA_HOME', os.getenv('HOME'))}") / FLWR_DIR,
-            )
-        )
-    return Path(provided_path).absolute()
-
-
 def get_project_dir(
     fab_id: str,
     fab_version: str,
     fab_hash: str,
-    flwr_dir: Optional[Union[str, Path]] = None,
 ) -> Path:
     """Return the project directory based on the given fab_id and fab_version."""
     # Check the fab_id
@@ -64,16 +46,14 @@ def get_project_dir(
             f"Invalid FAB ID: {fab_id}",
         )
     publisher, project_name = fab_id.split("/")
-    if flwr_dir is None:
-        flwr_dir = get_flwr_dir()
     return (
-        Path(flwr_dir)
+        get_flwr_home()
         / APP_DIR
         / f"{publisher}.{project_name}.{fab_version}.{fab_hash[:FAB_HASH_TRUNCATION]}"
     )
 
 
-def get_project_config(project_dir: Union[str, Path]) -> dict[str, Any]:
+def get_project_config(project_dir: str | Path) -> dict[str, Any]:
     """Return pyproject.toml in the given project directory."""
     # Load pyproject.toml file
     toml_path = Path(project_dir) / FAB_CONFIG_FILE
@@ -134,7 +114,7 @@ def get_fused_config_from_dir(
     return fuse_dicts(flat_default_config, override_config)
 
 
-def get_fused_config_from_fab(fab_file: Union[Path, bytes], run: Run) -> UserConfig:
+def get_fused_config_from_fab(fab_file: Path | bytes, run: Run) -> UserConfig:
     """Fuse default config in a `FAB` with overrides in a `Run`.
 
     This enables obtaining a run-config without having to install the FAB. This
@@ -146,7 +126,7 @@ def get_fused_config_from_fab(fab_file: Union[Path, bytes], run: Run) -> UserCon
     return fuse_dicts(flat_config_flat, run.override_config)
 
 
-def get_fused_config(run: Run, flwr_dir: Optional[Path]) -> UserConfig:
+def get_fused_config(run: Run) -> UserConfig:
     """Merge the overrides from a `Run` with the config from a FAB.
 
     Get the config using the fab_id and the fab_version, remove the nesting by adding
@@ -156,7 +136,7 @@ def get_fused_config(run: Run, flwr_dir: Optional[Path]) -> UserConfig:
     if not run.fab_id or not run.fab_version:
         return {}
 
-    project_dir = get_project_dir(run.fab_id, run.fab_version, run.fab_hash, flwr_dir)
+    project_dir = get_project_dir(run.fab_id, run.fab_version, run.fab_hash)
 
     # Return empty dict if project directory does not exist
     if not project_dir.is_dir():
@@ -165,9 +145,7 @@ def get_fused_config(run: Run, flwr_dir: Optional[Path]) -> UserConfig:
     return get_fused_config_from_dir(project_dir, run.override_config)
 
 
-def flatten_dict(
-    raw_dict: Optional[dict[str, Any]], parent_key: str = ""
-) -> UserConfig:
+def flatten_dict(raw_dict: dict[str, Any] | None, parent_key: str = "") -> UserConfig:
     """Flatten dict by joining nested keys with a given separator."""
     if raw_dict is None:
         return {}
@@ -205,9 +183,7 @@ def unflatten_dict(flat_dict: dict[str, Any]) -> dict[str, Any]:
     return unflattened_dict
 
 
-def parse_config_args(
-    config: Optional[list[str]], flatten: bool = True
-) -> dict[str, Any]:
+def parse_config_args(config: list[str] | None, flatten: bool = True) -> dict[str, Any]:
     """Parse separator separated list of key-value pairs separated by '='."""
     overrides: UserConfig = {}
 
@@ -216,7 +192,7 @@ def parse_config_args(
 
     # Handle if .toml file is passed
     if len(config) == 1 and config[0].endswith(".toml"):
-        with Path(config[0]).open("rb") as config_file:
+        with Path(config[0]).expanduser().open("rb") as config_file:
             overrides = flatten_dict(tomli.load(config_file))
         return overrides
 
@@ -238,16 +214,13 @@ def parse_config_args(
                 overrides.update(tomli.loads(toml_str))
                 flat_overrides = flatten_dict(overrides) if flatten else overrides
             except tomli.TOMLDecodeError as err:
-                typer.secho(
-                    "❌ The provided configuration string is in an invalid format. "
+                raise click.ClickException(
+                    "The provided configuration string is in an invalid format. "
                     "The correct format should be, e.g., 'key1=123 key2=false "
                     'key3="string"\', where values must be of type bool, int, '
                     "string, or float. Ensure proper formatting with "
-                    "space-separated key-value pairs.",
-                    fg=typer.colors.RED,
-                    bold=True,
-                )
-                raise typer.Exit(code=1) from err
+                    "space-separated key-value pairs."
+                ) from err
 
     return flat_overrides
 
@@ -269,7 +242,7 @@ def user_config_to_configrecord(config: UserConfig) -> ConfigRecord:
     return c_record
 
 
-def get_fab_config(fab_file: Union[Path, bytes]) -> dict[str, Any]:
+def get_fab_config(fab_file: Path | bytes) -> dict[str, Any]:
     """Extract the config from a FAB file or path.
 
     Parameters
@@ -283,7 +256,7 @@ def get_fab_config(fab_file: Union[Path, bytes]) -> dict[str, Any]:
     Dict[str, Any]
         The `config` of the given Flower App Bundle.
     """
-    fab_file_archive: Union[Path, IO[bytes]]
+    fab_file_archive: Path | IO[bytes]
     if isinstance(fab_file, bytes):
         fab_file_archive = BytesIO(fab_file)
     elif isinstance(fab_file, Path):
@@ -319,7 +292,7 @@ def _validate_run_config(config_dict: dict[str, Any], errors: list[str]) -> None
 
 # pylint: disable=too-many-branches
 def validate_fields_in_config(
-    config: dict[str, Any]
+    config: dict[str, Any],
 ) -> tuple[bool, list[str], list[str]]:
     """Validate pyproject.toml fields."""
     errors = []
@@ -336,8 +309,6 @@ def validate_fields_in_config(
             warnings.append('Recommended property "description" missing in [project]')
         if "license" not in config["project"]:
             warnings.append('Recommended property "license" missing in [project]')
-        if "authors" not in config["project"]:
-            warnings.append('Recommended property "authors" missing in [project]')
 
     if (
         "tool" not in config
@@ -368,7 +339,7 @@ def validate_fields_in_config(
 def validate_config(
     config: dict[str, Any],
     check_module: bool = True,
-    project_dir: Optional[Union[str, Path]] = None,
+    project_dir: str | Path | None = None,
 ) -> tuple[bool, list[str], list[str]]:
     """Validate pyproject.toml."""
     is_valid, errors, warnings = validate_fields_in_config(config)
@@ -381,13 +352,13 @@ def validate_config(
     is_valid, reason = object_ref.validate(serverapp_ref, check_module, project_dir)
 
     if not is_valid and isinstance(reason, str):
-        return False, [reason], []
+        return False, [reason], warnings
 
     # Validate clientapp
     clientapp_ref = config["tool"]["flwr"]["app"]["components"]["clientapp"]
     is_valid, reason = object_ref.validate(clientapp_ref, check_module, project_dir)
 
     if not is_valid and isinstance(reason, str):
-        return False, [reason], []
+        return False, [reason], warnings
 
-    return True, [], []
+    return True, [], warnings

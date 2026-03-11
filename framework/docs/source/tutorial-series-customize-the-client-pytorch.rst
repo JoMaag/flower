@@ -1,5 +1,6 @@
-Communicate custom Messages
-===========================
+#############################
+ Communicate custom Messages
+#############################
 
 .. |message_link| replace:: ``Message``
 
@@ -46,13 +47,14 @@ communicate arbitrary Python objects via a ``Message`` and how to use it on the
 Let's go deeper and see how to serialize arbitrary Python objects and communicate them!
 🌼
 
-Preparation
------------
+*************
+ Preparation
+*************
 
 Before we begin with the actual code, let's make sure that we have everything we need.
 
 Installing dependencies
-~~~~~~~~~~~~~~~~~~~~~~~
+=======================
 
 .. note::
 
@@ -65,37 +67,37 @@ First, we install the Flower package ``flwr``:
     # In a new Python environment
     $ pip install -U "flwr[simulation]"
 
-Then, we create a new Flower app called ``flower-tutorial`` using the PyTorch template.
-We also specify a username (``flwrlabs``) for the project:
+Then, run the command below:
 
 .. code-block:: shell
 
-    $ flwr new flower-tutorial --framework pytorch --username flwrlabs
+    $ flwr new @flwrlabs/quickstart-pytorch
 
-After running the command, a new directory called ``flower-tutorial`` will be created.
-It should have the following structure:
+After running it you'll notice a new directory named ``quickstart-pytorch`` has been
+created. It should have the following structure:
 
 .. code-block:: shell
 
-    flower-tutorial
-    ├── README.md
-    ├── flower_tutorial
+    quickstart-pytorch
+    ├── pytorchexample
     │   ├── __init__.py
     │   ├── client_app.py   # Defines your ClientApp
     │   ├── server_app.py   # Defines your ServerApp
     │   └── task.py         # Defines your model, training and data loading
-    └── pyproject.toml      # Project metadata like dependencies and configs
+    ├── pyproject.toml      # Project metadata like dependencies and configs
+    └── README.md
 
 Next, we install the project and its dependencies, which are specified in the
 ``pyproject.toml`` file:
 
 .. code-block:: shell
 
-    $ cd flower-tutorial
+    $ cd quickstart-pytorch
     $ pip install -e .
 
-Revisiting replying from ClientApps
------------------------------------
+*************************************
+ Revisiting replying from ClientApps
+*************************************
 
 Let's remind ourselves how the communication between ``ClientApp`` and ``ServerApp``
 works. A ``ClientApp`` function wrapped with ``@app.train()`` would typically return the
@@ -163,8 +165,9 @@ floats, you can use a ``ConfigRecord`` to send strings, booleans and even bytes.
 next section we'll learn to communicate arbitrary Python objects by first serializing
 them to bytes.
 
-Communicating arbitrary objects
--------------------------------
+*********************************
+ Communicating arbitrary objects
+*********************************
 
 Let's assume the training stage of our ``ClientApp`` produces a dataclass like the one
 below and we would like to communicate it to the ``ServerApp`` via the ``Message``.
@@ -187,7 +190,7 @@ Now, let's see how the ``ClientApp`` can serialize this object, send it to the
 ``ServerApp``, make the strategy deserialize it back to the original object, and use it.
 
 Sending from ClientApps
-~~~~~~~~~~~~~~~~~~~~~~~
+=======================
 
 Let's assume our ``ClientApp`` trains the model locally and generates an instance of
 ``TrainProcessMetadata``. In order to send it as part of the message reply, we need to
@@ -249,7 +252,7 @@ Let's see next how the strategy on the ``ServerApp`` can deserialize the object 
 its original form and use it.
 
 Receiving on ServerApps
-~~~~~~~~~~~~~~~~~~~~~~~
+=======================
 
 As you know, a Flower strategy will automatically aggregate the ``ArrayRecord`` and
 ``MetricRecord`` from each client. However, it will not do anything with the
@@ -299,7 +302,10 @@ Finally, we run the Flower App.
 
 .. code-block:: shell
 
-    $ flwr run .
+    $ flwr run . --stream
+
+Plain ``flwr run .`` submits the run, prints the run ID, and returns without streaming
+logs. See :doc:`how-to-run-flower-locally` for the full local workflow.
 
 You will observe that the training metadata from each client is logged to the console of
 the ``ServerApp``. If you finish embedding the creation of the ``TrainProcessMetadata``
@@ -317,8 +323,9 @@ You can now use this information in your strategy logic as needed. For example, 
 implement a custom aggregation method based on convergence status or to log additional
 metrics.
 
-Recap
------
+*******
+ Recap
+*******
 
 In this part of the tutorial, we've seen how to communicate arbitrary Python objects
 between the ``ClientApp`` and the ``ServerApp`` by serializing them to bytes and sending
@@ -327,8 +334,9 @@ back to their original form on the server side and use them in a custom strategy
 that the steps presented here are identical if you need to serialize objects in the
 strategy to send them to the clients.
 
-Next steps
-----------
+************
+ Next steps
+************
 
 Before you continue, make sure to join the Flower community on Flower Discuss (`Join
 Flower Discuss <https://discuss.flower.ai>`__) and on Slack (`Join Slack

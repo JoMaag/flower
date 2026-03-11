@@ -24,11 +24,10 @@ import urllib.request
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from enum import Enum, auto
-from pathlib import Path
-from typing import Any, Optional, Union, cast
+from typing import Any, cast
 
-from flwr.common.constant import FLWR_DIR
-from flwr.common.version import package_name, package_version
+from flwr.supercore.utils import get_flwr_home
+from flwr.supercore.version import package_name, package_version
 
 FLWR_TELEMETRY_ENABLED = os.getenv("FLWR_TELEMETRY_ENABLED", "1")
 FLWR_TELEMETRY_LOGGING = os.getenv("FLWR_TELEMETRY_LOGGING", "0")
@@ -56,13 +55,9 @@ def _configure_logger(log_level: int) -> None:
 _configure_logger(LOGGER_LEVEL)
 
 
-def log(msg: Union[str, Exception]) -> None:
+def log(msg: str | Exception) -> None:
     """Log message using logger at DEBUG level."""
     logging.getLogger(LOGGER_NAME).log(LOGGER_LEVEL, msg)
-
-
-def _get_home() -> Path:
-    return Path().home()
 
 
 def _get_partner_id() -> str:
@@ -82,19 +77,14 @@ def _get_source_id() -> str:
     source_id = "unavailable"
     # Check if .flwr in home exists
     try:
-        home = _get_home()
-    except RuntimeError:
-        # If the home directory can’t be resolved, RuntimeError is raised.
+        flwr_home = get_flwr_home()
+        # Create .flwr directory if it does not exist yet.
+        flwr_home.mkdir(parents=True, exist_ok=True)
+    except (RuntimeError, PermissionError):
+        # If the directory can’t be resolved or created, an error is raised.
         return source_id
 
-    flwr_dir = home.joinpath(FLWR_DIR)
-    # Create .flwr directory if it does not exist yet.
-    try:
-        flwr_dir.mkdir(parents=True, exist_ok=True)
-    except PermissionError:
-        return source_id
-
-    source_file = flwr_dir.joinpath("source")
+    source_file = flwr_home.joinpath("source")
 
     # If no source_file exists create one and write it
     if not source_file.exists():
@@ -161,11 +151,11 @@ class EventType(str, Enum):
     FLWR_SERVERAPP_RUN_ENTER = auto()
     FLWR_SERVERAPP_RUN_LEAVE = auto()
 
-    # --- Simulation Engine ------------------------------------------------------------
+    # CLI: flwr-clientapp
+    FLWR_CLIENTAPP_RUN_ENTER = auto()
+    FLWR_CLIENTAPP_RUN_LEAVE = auto()
 
-    # CLI: flower-simulation
-    CLI_FLOWER_SIMULATION_ENTER = auto()
-    CLI_FLOWER_SIMULATION_LEAVE = auto()
+    # --- Simulation Engine ------------------------------------------------------------
 
     # Python API: `run_simulation`
     PYTHON_API_RUN_SIMULATION_ENTER = auto()
@@ -188,7 +178,7 @@ class EventType(str, Enum):
 
 # Use the ThreadPoolExecutor with max_workers=1 to have a queue
 # and also ensure that telemetry calls are not blocking.
-state: dict[str, Union[Optional[str], Optional[ThreadPoolExecutor]]] = {
+state: dict[str, str | None | ThreadPoolExecutor | None] = {
     # Will be assigned ThreadPoolExecutor(max_workers=1)
     # in event() the first time it's required
     "executor": None,
@@ -200,7 +190,7 @@ state: dict[str, Union[Optional[str], Optional[ThreadPoolExecutor]]] = {
 
 def event(
     event_type: EventType,
-    event_details: Optional[dict[str, Any]] = None,
+    event_details: dict[str, Any] | None = None,
 ) -> Future:  # type: ignore
     """Submit create_event to ThreadPoolExecutor to avoid blocking."""
     if state["executor"] is None:
@@ -212,7 +202,7 @@ def event(
     return result
 
 
-def create_event(event_type: EventType, event_details: Optional[dict[str, Any]]) -> str:
+def create_event(event_type: EventType, event_details: dict[str, Any] | None) -> str:
     """Create telemetry event."""
     if state["source"] is None:
         state["source"] = _get_source_id()

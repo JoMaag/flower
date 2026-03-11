@@ -22,6 +22,7 @@ import "flwr/proto/transport.proto";
 import "flwr/proto/recorddict.proto";
 import "flwr/proto/run.proto";
 import "flwr/proto/node.proto";
+import "flwr/proto/federation.proto";
 
 service Control {
   // Start run upon request
@@ -54,13 +55,57 @@ service Control {
 
   // List SuperNodes
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {}
+
+  // List Federations
+  rpc ListFederations(ListFederationsRequest)
+      returns (ListFederationsResponse) {}
+
+  // Show Federation
+  rpc ShowFederation(ShowFederationRequest) returns (ShowFederationResponse) {}
+
+  // Create Federation
+  rpc CreateFederation(CreateFederationRequest)
+      returns (CreateFederationResponse) {}
+
+  // Archive Federation
+  rpc ArchiveFederation(ArchiveFederationRequest)
+      returns (ArchiveFederationResponse) {}
+
+  // Add SuperNode to Federation
+  rpc AddNodeToFederation(AddNodeToFederationRequest)
+      returns (AddNodeToFederationResponse) {}
+
+  // Remove SuperNode from Federation
+  rpc RemoveNodeFromFederation(RemoveNodeFromFederationRequest)
+      returns (RemoveNodeFromFederationResponse) {}
+
+  // Create Invitation
+  rpc CreateInvitation(CreateInvitationRequest)
+      returns (CreateInvitationResponse) {}
+
+  // List Invitations
+  rpc ListInvitations(ListInvitationsRequest)
+      returns (ListInvitationsResponse) {}
+
+  // Accept Invitation
+  rpc AcceptInvitation(AcceptInvitationRequest)
+      returns (AcceptInvitationResponse) {}
+
+  // Reject Invitation
+  rpc RejectInvitation(RejectInvitationRequest)
+      returns (RejectInvitationResponse) {}
+
+  // Revoke Invitation
+  rpc RevokeInvitation(RevokeInvitationRequest)
+      returns (RevokeInvitationResponse) {}
 }
 
 message StartRunRequest {
   Fab fab = 1;
   map<string, Scalar> override_config = 2;
   ConfigRecord federation_options = 3;
-  string app_id = 4;
+  string app_spec = 4;
+  string federation = 5;
 }
 message StartRunResponse { optional uint64 run_id = 1; }
 message StreamLogsRequest {
@@ -71,7 +116,10 @@ message StreamLogsResponse {
   string log_output = 1;
   double latest_timestamp = 2;
 }
-message ListRunsRequest { optional uint64 run_id = 1; }
+message ListRunsRequest {
+  optional uint64 run_id = 1;
+  optional uint64 limit = 2;
+}
 message ListRunsResponse {
   map<uint64, Run> run_dict = 1;
   string now = 2;
@@ -109,3 +157,57 @@ message ListNodesResponse {
   repeated NodeInfo nodes_info = 1;
   string now = 2;
 }
+
+message ListFederationsRequest {}
+message ListFederationsResponse { repeated Federation federations = 1; }
+
+message ShowFederationRequest { string federation_name = 1; }
+message ShowFederationResponse {
+  Federation federation = 1;
+  string now = 2;
+}
+
+message CreateFederationRequest {
+  string federation_name = 1;
+  string description = 2;
+}
+message CreateFederationResponse { Federation federation = 1; }
+
+message ArchiveFederationRequest { string federation_name = 1; }
+message ArchiveFederationResponse {}
+
+message AddNodeToFederationRequest {
+  string federation_name = 1;
+  uint64 node_id = 2;
+}
+message AddNodeToFederationResponse {}
+
+message RemoveNodeFromFederationRequest {
+  string federation_name = 1;
+  uint64 node_id = 2;
+}
+message RemoveNodeFromFederationResponse {}
+
+message CreateInvitationRequest {
+  string invitee_account_name = 1;
+  string federation_name = 2;
+}
+message CreateInvitationResponse {}
+
+message ListInvitationsRequest {}
+message ListInvitationsResponse {
+  repeated Invitation created_invitations = 1;
+  repeated Invitation received_invitations = 2;
+}
+
+message AcceptInvitationRequest { string federation_name = 1; }
+message AcceptInvitationResponse {}
+
+message RejectInvitationRequest { string federation_name = 1; }
+message RejectInvitationResponse {}
+
+message RevokeInvitationRequest {
+  string invitee_account_name = 1;
+  string federation_name = 2;
+}
+message RevokeInvitationResponse {}

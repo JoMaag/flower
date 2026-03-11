@@ -15,10 +15,10 @@
 """Contextmanager for a REST request-response channel to the Flower server."""
 
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from logging import ERROR, WARN
-from typing import Callable, Optional, TypeVar, Union
+from typing import TypeVar
 
 from cryptography.hazmat.primitives.asymmetric import ec
 from google.protobuf.message import Message as GrpcMessage
@@ -27,12 +27,6 @@ from requests.exceptions import ConnectionError as RequestsConnectionError
 from flwr.common import GRPC_MAX_MESSAGE_LENGTH
 from flwr.common.constant import HEARTBEAT_DEFAULT_INTERVAL
 from flwr.common.exit import ExitCode, flwr_exit
-from flwr.common.heartbeat import HeartbeatSender
-from flwr.common.inflatable_protobuf_utils import (
-    make_confirm_message_received_fn_protobuf,
-    make_pull_object_fn_protobuf,
-    make_push_object_fn_protobuf,
-)
 from flwr.common.logger import log
 from flwr.common.message import Message, remove_content_from_message
 from flwr.common.retry_invoker import RetryInvoker
@@ -73,6 +67,12 @@ from flwr.proto.message_pb2 import (  # pylint: disable=E0611
 )
 from flwr.proto.node_pb2 import Node  # pylint: disable=E0611
 from flwr.proto.run_pb2 import GetRunRequest, GetRunResponse  # pylint: disable=E0611
+from flwr.supercore.heartbeat import HeartbeatSender
+from flwr.supercore.inflatable.inflatable_protobuf_utils import (
+    make_confirm_message_received_fn_protobuf,
+    make_pull_object_fn_protobuf,
+    make_push_object_fn_protobuf,
+)
 from flwr.supercore.primitives.asymmetric import generate_key_pairs, public_key_to_bytes
 
 try:
@@ -103,17 +103,15 @@ def http_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
     insecure: bool,  # pylint: disable=unused-argument
     retry_invoker: RetryInvoker,
     max_message_length: int = GRPC_MAX_MESSAGE_LENGTH,  # pylint: disable=W0613
-    root_certificates: Optional[
-        Union[bytes, str]
-    ] = None,  # pylint: disable=unused-argument
-    authentication_keys: Optional[  # pylint: disable=unused-argument
-        tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey]
-    ] = None,
+    root_certificates: bytes | str | None = None,  # pylint: disable=unused-argument
+    authentication_keys: (
+        tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey] | None
+    ) = None,
 ) -> Iterator[
     tuple[
         int,
-        Callable[[], Optional[tuple[Message, ObjectTree]]],
-        Callable[[Message, ObjectTree], set[str]],
+        Callable[[], tuple[Message, ObjectTree] | None],
+        Callable[[Message, ObjectTree, float], set[str]],
         Callable[[int], Run],
         Callable[[str, int], Fab],
         Callable[[int, str], bytes],
@@ -151,7 +149,7 @@ def http_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
     -------
     node_id : int
     receive : Callable[[], Optional[tuple[Message, ObjectTree]]]
-    send : Callable[[Message, ObjectTree], set[str]]
+    send : Callable[[Message, ObjectTree, float], set[str]]
     get_run : Callable[[int], Run]
     get_fab : Callable[[str, int], Fab]
     pull_object : Callable[[str], bytes]
@@ -172,7 +170,7 @@ def http_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
     # Otherwise any server can fake its identity
     # Please refer to:
     # https://requests.readthedocs.io/en/latest/user/advanced/#ssl-cert-verification
-    verify: Union[bool, str] = True
+    verify: bool | str = True
     if isinstance(root_certificates, str):
         verify = root_certificates
     elif isinstance(root_certificates, bytes):
@@ -192,7 +190,7 @@ def http_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
     node_pk = public_key_to_bytes(authentication_keys[1])
 
     # Shared variables for inner functions
-    node: Optional[Node] = None
+    node: Node | None = None
 
     # Remove should_giveup from RetryInvoker as REST does not support gRPC status codes
     retry_invoker.should_giveup = None
@@ -203,7 +201,7 @@ def http_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
 
     def _request(
         req: GrpcMessage, res_type: type[T], api_path: str, retry: bool = True
-    ) -> Optional[T]:
+    ) -> T | None:
         # Serialize the request
         req_bytes = req.SerializeToString()
 
@@ -369,7 +367,7 @@ def http_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
         # Cleanup
         node = None
 
-    def receive() -> Optional[tuple[Message, ObjectTree]]:
+    def receive() -> tuple[Message, ObjectTree] | None:
         """Pull a message with its ObjectTree from SuperLink."""
         # Get Node
         if node is None:
@@ -395,12 +393,13 @@ def http_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
         # Return the Message and its object tree
         return in_message, object_tree
 
-    def send(message: Message, object_tree: ObjectTree) -> set[str]:
+    def send(
+        message: Message, object_tree: ObjectTree, clientapp_runtime: float
+    ) -> set[str]:
         """Send the message with its ObjectTree to SuperLink."""
         # Get Node
         if node is None:
             raise RuntimeError("Node instance missing")
-
         # Remove the content from the message if it has
         if message.has_content():
             message = remove_content_from_message(message)
@@ -410,6 +409,7 @@ def http_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
             node=node,
             messages_list=[message_to_proto(message)],
             message_object_trees=[object_tree],
+            clientapp_runtime_list=[clientapp_runtime],
         )
         res = _request(req, PushMessagesResponse, PATH_PUSH_MESSAGES)
         if res is None:

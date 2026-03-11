@@ -25,13 +25,14 @@ from typing import TYPE_CHECKING, Any, cast, overload
 
 import numpy as np
 
-from ..constant import FLWR_PRIVATE_MAX_ARRAY_CHUNK_SIZE, SType
-from ..inflatable import (
+from flwr.supercore.inflatable.inflatable_object import (
     InflatableObject,
     add_header_to_object_body,
     get_object_body,
     get_object_children_ids_from_object_content,
 )
+
+from ..constant import FLWR_PRIVATE_MAX_ARRAY_CHUNK_SIZE, SType
 from ..typing import NDArray
 from .arraychunk import ArrayChunk
 
@@ -117,15 +118,15 @@ class Array(InflatableObject):
     data: bytes
 
     @overload
-    def __init__(  # noqa: E704
+    def __init__(
         self, dtype: str, shape: tuple[int, ...], stype: str, data: bytes
     ) -> None: ...
 
     @overload
-    def __init__(self, ndarray: NDArray) -> None: ...  # noqa: E704
+    def __init__(self, ndarray: NDArray) -> None: ...
 
     @overload
-    def __init__(self, torch_tensor: torch.Tensor) -> None: ...  # noqa: E704
+    def __init__(self, torch_tensor: torch.Tensor) -> None: ...
 
     def __init__(  # pylint: disable=too-many-arguments, too-many-locals
         self,

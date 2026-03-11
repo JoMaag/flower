@@ -21,29 +21,25 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from logging import INFO, WARN
 from pathlib import Path
 from time import sleep
-from typing import Callable, Optional, TypeVar, cast
+from typing import TypeVar, cast
 
 import grpc
 import yaml
 
 from flwr.common import GRPC_MAX_MESSAGE_LENGTH, EventType, event
-from flwr.common.address import parse_address
 from flwr.common.args import try_obtain_server_certificates
-from flwr.common.config import get_flwr_dir
 from flwr.common.constant import (
     AUTHN_TYPE_YAML_KEY,
     AUTHZ_TYPE_YAML_KEY,
-    CLIENT_OCTET,
     CONTROL_API_DEFAULT_SERVER_ADDRESS,
     FLEET_API_GRPC_RERE_DEFAULT_ADDRESS,
     FLEET_API_REST_DEFAULT_ADDRESS,
     ISOLATION_MODE_PROCESS,
     ISOLATION_MODE_SUBPROCESS,
-    SERVER_OCTET,
     SERVERAPPIO_API_DEFAULT_SERVER_ADDRESS,
     SIMULATIONIO_API_DEFAULT_SERVER_ADDRESS,
     TRANSPORT_TYPE_GRPC_ADAPTER,
@@ -57,17 +53,19 @@ from flwr.common.constant import (
 from flwr.common.event_log_plugin import EventLogWriterPlugin
 from flwr.common.exit import ExitCode, flwr_exit, register_signal_handlers
 from flwr.common.grpc import generic_create_grpc_server
-from flwr.common.logger import log
-from flwr.common.version import package_version
+from flwr.common.logger import configure_superlink_log_file, log
 from flwr.proto.fleet_pb2_grpc import (  # pylint: disable=E0611
     add_FleetServicer_to_server,
 )
 from flwr.proto.grpcadapter_pb2_grpc import add_GrpcAdapterServicer_to_server
 from flwr.server.fleet_event_log_interceptor import FleetEventLogInterceptor
+from flwr.supercore.address import parse_address, resolve_bind_address
 from flwr.supercore.constant import FLWR_IN_MEMORY_DB_NAME
 from flwr.supercore.ffs import FfsFactory
 from flwr.supercore.grpc_health import add_args_health, run_health_server_grpc_no_tls
 from flwr.supercore.object_store import ObjectStoreFactory
+from flwr.supercore.utils import get_flwr_home
+from flwr.supercore.version import package_version
 from flwr.superlink.artifact_provider import ArtifactProvider
 from flwr.superlink.auth_plugin import (
     ControlAuthnPlugin,
@@ -75,6 +73,7 @@ from flwr.superlink.auth_plugin import (
     NoOpControlAuthnPlugin,
     NoOpControlAuthzPlugin,
 )
+from flwr.superlink.federation import FederationManager, NoOpFederationManager
 from flwr.superlink.servicer.control import run_control_api_grpc
 
 from .superlink.fleet.grpc_adapter.grpc_adapter_servicer import GrpcAdapterServicer
@@ -86,7 +85,7 @@ from .superlink.linkstate import LinkStateFactory
 from .superlink.serverappio.serverappio_grpc import run_serverappio_api_grpc
 from .superlink.simulation.simulationio_grpc import run_simulationio_api_grpc
 
-BASE_DIR = get_flwr_dir() / "superlink" / "ffs"
+BASE_DIR = get_flwr_home() / "superlink" / "ffs"
 P = TypeVar("P", ControlAuthnPlugin, ControlAuthzPlugin)
 
 
@@ -97,6 +96,7 @@ try:
         get_control_authz_ee_plugins,
         get_control_event_log_writer_plugins,
         get_ee_artifact_provider,
+        get_ee_federation_manager,
         get_fleet_event_log_writer_plugins,
     )
 except ImportError:
@@ -129,6 +129,10 @@ except ImportError:
         """Return all Control API authorization plugins for EE."""
         return {}
 
+    def get_ee_federation_manager() -> FederationManager:
+        """Return the EE FederationManager."""
+        raise NotImplementedError("No federation manager is currently supported.")
+
 
 def get_control_authn_plugins() -> dict[str, type[ControlAuthnPlugin]]:
     """Return all Control API authentication plugins."""
@@ -142,20 +146,30 @@ def get_control_authz_plugins() -> dict[str, type[ControlAuthzPlugin]]:
     return ee_dict | {AuthzType.NOOP: NoOpControlAuthzPlugin}
 
 
+def get_federation_manager() -> FederationManager:
+    """Return the FederationManager."""
+    try:
+        federation_manager: FederationManager = get_ee_federation_manager()
+        return federation_manager
+    except NotImplementedError:
+        return NoOpFederationManager()
+
+
 # pylint: disable=too-many-branches, too-many-locals, too-many-statements
 def run_superlink() -> None:
     """Run Flower SuperLink (ServerAppIo API and Fleet API)."""
     args = _parse_args_run_superlink().parse_args()
 
+    if args.log_file:
+        configure_superlink_log_file(
+            filename=args.log_file,
+            interval_hours=args.log_rotation_interval_hours,
+            backup_count=args.log_rotation_backup_count,
+        )
+
     log(INFO, "Starting Flower SuperLink")
 
     event(EventType.RUN_SUPERLINK_ENTER)
-
-    # Warn unused options
-    if args.flwr_dir is not None:
-        log(
-            WARN, "The `--flwr-dir` option is currently not in use and will be ignored."
-        )
 
     # Detect if `--executor*` arguments were set
     if args.executor or args.executor_dir or args.executor_config:
@@ -209,9 +223,9 @@ def run_superlink() -> None:
     # provided
     verify_tls_cert = not getattr(args, "disable_oidc_tls_cert_verification", None)
 
-    authn_plugin: Optional[ControlAuthnPlugin] = None
-    authz_plugin: Optional[ControlAuthzPlugin] = None
-    event_log_plugin: Optional[EventLogWriterPlugin] = None
+    authn_plugin: ControlAuthnPlugin | None = None
+    authz_plugin: ControlAuthzPlugin | None = None
+    event_log_plugin: EventLogWriterPlugin | None = None
     # Load the auth plugin if the args.account_auth_config is provided
     if cfg_path := getattr(args, "user_auth_config", None):
         log(
@@ -281,14 +295,19 @@ def run_superlink() -> None:
             f" to the Flower documentation for more information: {url_v}{page}",
         )
 
-    # Initialize StateFactory
-    state_factory = LinkStateFactory(args.database)
-
-    # Initialize FfsFactory
-    ffs_factory = FfsFactory(args.storage_dir)
+    # Load Federation Manager
+    federation_manager = get_federation_manager()
 
     # Initialize ObjectStoreFactory
     objectstore_factory = ObjectStoreFactory(args.database)
+
+    # Initialize StateFactory
+    state_factory = LinkStateFactory(
+        args.database, federation_manager, objectstore_factory
+    )
+
+    # Initialize FfsFactory
+    ffs_factory = FfsFactory(args.storage_dir)
 
     # Start Control API
     is_simulation = args.simulation
@@ -303,6 +322,7 @@ def run_superlink() -> None:
         authz_plugin=authz_plugin,
         event_log_plugin=event_log_plugin,
         artifact_provider=artifact_provider,
+        fleet_api_type=args.fleet_api_type,
     )
     grpc_servers = [control_server]
     bckg_threads: list[threading.Thread] = []
@@ -407,16 +427,11 @@ def run_superlink() -> None:
             raise ValueError(f"Unknown fleet_api_type: {args.fleet_api_type}")
 
     if args.isolation == ISOLATION_MODE_SUBPROCESS:
-
-        _octet, _colon, _port = serverappio_address.rpartition(":")
-        io_address = (
-            f"{CLIENT_OCTET}:{_port}" if _octet == SERVER_OCTET else serverappio_address
+        appio_address = resolve_bind_address(
+            simulationio_address if is_simulation else serverappio_address
         )
         command = ["flower-superexec", "--insecure"]
-        command += [
-            "--appio-api-address",
-            simulationio_address if is_simulation else io_address,
-        ]
+        command += ["--appio-api-address", appio_address]
         command += [
             "--plugin-type",
             ExecPluginType.SIMULATION if is_simulation else ExecPluginType.SERVER_APP,
@@ -458,7 +473,7 @@ def _format_address(address: str) -> tuple[str, str, int]:
 
 
 def _load_control_auth_plugins(
-    config_path: Optional[str], verify_tls_cert: bool
+    config_path: str | None, verify_tls_cert: bool
 ) -> tuple[ControlAuthnPlugin, ControlAuthzPlugin]:
     """Obtain Control API authentication and authorization plugins."""
     # Load NoOp plugins if no config path is provided
@@ -470,7 +485,7 @@ def _load_control_auth_plugins(
         }
     # Load YAML file
     else:
-        with Path(config_path).open("r", encoding="utf-8") as file:
+        with Path(config_path).expanduser().open("r", encoding="utf-8") as file:
             config = yaml.safe_load(file)
 
     def _load_plugin(
@@ -517,7 +532,7 @@ def _load_control_auth_plugins(
     return authn_plugin, authz_plugin
 
 
-def _try_obtain_control_event_log_writer_plugin() -> Optional[EventLogWriterPlugin]:
+def _try_obtain_control_event_log_writer_plugin() -> EventLogWriterPlugin | None:
     """Return an instance of the event log writer plugin."""
     try:
         all_plugins: dict[str, type[EventLogWriterPlugin]] = (
@@ -531,7 +546,7 @@ def _try_obtain_control_event_log_writer_plugin() -> Optional[EventLogWriterPlug
         sys.exit("No event log writer plugins are currently supported.")
 
 
-def _try_obtain_fleet_event_log_writer_plugin() -> Optional[EventLogWriterPlugin]:
+def _try_obtain_fleet_event_log_writer_plugin() -> EventLogWriterPlugin | None:
     """Return an instance of the Fleet Servicer event log writer plugin."""
     try:
         all_plugins: dict[str, type[EventLogWriterPlugin]] = (
@@ -551,8 +566,8 @@ def _run_fleet_api_grpc_rere(  # pylint: disable=R0913, R0917
     ffs_factory: FfsFactory,
     objectstore_factory: ObjectStoreFactory,
     enable_supernode_auth: bool,
-    certificates: Optional[tuple[bytes, bytes, bytes]],
-    interceptors: Optional[Sequence[grpc.ServerInterceptor]] = None,
+    certificates: tuple[bytes, bytes, bytes] | None,
+    interceptors: Sequence[grpc.ServerInterceptor] | None = None,
 ) -> grpc.Server:
     """Run Fleet API (gRPC, request-response)."""
     # Create Fleet API gRPC server
@@ -585,7 +600,7 @@ def _run_fleet_api_grpc_adapter(
     state_factory: LinkStateFactory,
     ffs_factory: FfsFactory,
     objectstore_factory: ObjectStoreFactory,
-    certificates: Optional[tuple[bytes, bytes, bytes]],
+    certificates: tuple[bytes, bytes, bytes] | None,
 ) -> grpc.Server:
     """Run Fleet API (GrpcAdapter)."""
     # Create Fleet API gRPC server
@@ -618,8 +633,8 @@ def _run_fleet_api_grpc_adapter(
 def _run_fleet_api_rest(
     host: str,
     port: int,
-    ssl_keyfile: Optional[str],
-    ssl_certfile: Optional[str],
+    ssl_keyfile: str | None,
+    ssl_certfile: str | None,
     state_factory: LinkStateFactory,
     ffs_factory: FfsFactory,
     objectstore_factory: ObjectStoreFactory,
@@ -679,17 +694,6 @@ def _add_args_common(parser: argparse.ArgumentParser) -> None:
         "Use this flag only if you understand the risks.",
     )
     parser.add_argument(
-        "--flwr-dir",
-        default=None,
-        help="""The path containing installed Flower Apps.
-        The default directory is:
-
-        - `$FLWR_HOME/` if `$FLWR_HOME` is defined
-        - `$XDG_DATA_HOME/.flwr/` if `$XDG_DATA_HOME` is defined
-        - `$HOME/.flwr/` in all other cases
-        """,
-    )
-    parser.add_argument(
         "--ssl-certfile",
         help="Fleet API server SSL certificate file (as a path str) "
         "to create a secure connection.",
@@ -743,6 +747,25 @@ def _add_args_common(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Enable supernode authentication.",
     )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=None,
+        help="Path to the SuperLink log file. If provided, logs are written to this "
+        "file and rotated on a fixed schedule.",
+    )
+    parser.add_argument(
+        "--log-rotation-interval-hours",
+        type=_positive_int,
+        default=24,
+        help="Rotate SuperLink log files every N hours.",
+    )
+    parser.add_argument(
+        "--log-rotation-backup-count",
+        type=_positive_int,
+        default=7,
+        help="Maximum number of rotated SuperLink log files to keep.",
+    )
 
 
 def _add_args_serverappio_api(parser: argparse.ArgumentParser) -> None:
@@ -752,6 +775,13 @@ def _add_args_serverappio_api(parser: argparse.ArgumentParser) -> None:
         help="ServerAppIo API (gRPC) server address (IPv4, IPv6, or a domain name). "
         f"By default, it is set to {SERVERAPPIO_API_DEFAULT_SERVER_ADDRESS}.",
     )
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("value must be >= 1")
+    return parsed
 
 
 def _add_args_fleet_api(parser: argparse.ArgumentParser) -> None:

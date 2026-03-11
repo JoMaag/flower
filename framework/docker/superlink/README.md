@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://flower.ai/">
-    <img src="https://flower.ai/_next/image/?url=%2F_next%2Fstatic%2Fmedia%2Fflwr-head.4d68867a.png&w=384&q=75" width="140px" alt="Flower Website" />
+    <img src="https://flower.ai/static/images/icon/icon.png" width="140px" alt="Flower Website" />
   </a>
 </p>
 
@@ -20,14 +20,24 @@
 ## Supported tags
 
 - `latest`
-  - points to `1.23.0-py3.12-ubuntu24.04`
-  - uses Python 3.12 and Ubuntu 24.04
+  - points to `1.27.0-py3.13-ubuntu24.04`
+  - uses Python 3.13 and Ubuntu 24.04
 - `unstable`
   - points to the last successful build of the `main` branch
-- `nightly`, `<version>.dev<YYYYMMDD>` e.g. `1.24.0.dev20251103`
-  - uses Python 3.12 and Ubuntu 24.04
+- `nightly`, `<version>.dev<YYYYMMDD>` e.g. `1.28.0.dev20260310`
+  - uses Python 3.13 and Ubuntu 24.04
+- `1.27.0`, `1.27.0-py3.13-alpine3.22`
+- `1.27.0-py3.13-ubuntu24.04`, `latest`
+- `1.26.1`, `1.26.1-py3.13-alpine3.22`
+- `1.26.1-py3.13-ubuntu24.04`
+- `1.26.0`, `1.26.0-py3.13-alpine3.22`
+- `1.26.0-py3.13-ubuntu24.04`
+- `1.25.0`, `1.25.0-py3.13-alpine3.22`
+- `1.25.0-py3.13-ubuntu24.04`
+- `1.24.0`, `1.24.0-py3.13-alpine3.22`
+- `1.24.0-py3.13-ubuntu24.04`
 - `1.23.0`, `1.23.0-py3.12-alpine3.22`
-- `1.23.0-py3.12-ubuntu24.04`, `latest`
+- `1.23.0-py3.12-ubuntu24.04`
 - `1.22.0`, `1.22.0-py3.12-alpine3.22`
 - `1.22.0-py3.12-ubuntu24.04`
 - `1.21.0`, `1.21.0-py3.12-alpine3.22`

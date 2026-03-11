@@ -15,11 +15,10 @@
 """Contextmanager for a gRPC request-response channel to the Flower server."""
 
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from logging import ERROR
 from pathlib import Path
-from typing import Callable, Optional, Union
 
 import grpc
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -27,15 +26,9 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from flwr.common import GRPC_MAX_MESSAGE_LENGTH
 from flwr.common.constant import HEARTBEAT_CALL_TIMEOUT, HEARTBEAT_DEFAULT_INTERVAL
 from flwr.common.grpc import create_channel, on_channel_state_change
-from flwr.common.heartbeat import HeartbeatSender
-from flwr.common.inflatable_protobuf_utils import (
-    make_confirm_message_received_fn_protobuf,
-    make_pull_object_fn_protobuf,
-    make_push_object_fn_protobuf,
-)
 from flwr.common.logger import log
 from flwr.common.message import Message, remove_content_from_message
-from flwr.common.retry_invoker import RetryInvoker, _wrap_stub
+from flwr.common.retry_invoker import RetryInvoker, wrap_stub
 from flwr.common.serde import (
     fab_from_proto,
     message_from_proto,
@@ -63,6 +56,12 @@ from flwr.proto.heartbeat_pb2 import (  # pylint: disable=E0611
 from flwr.proto.message_pb2 import ObjectTree  # pylint: disable=E0611
 from flwr.proto.node_pb2 import Node  # pylint: disable=E0611
 from flwr.proto.run_pb2 import GetRunRequest, GetRunResponse  # pylint: disable=E0611
+from flwr.supercore.heartbeat import HeartbeatSender
+from flwr.supercore.inflatable.inflatable_protobuf_utils import (
+    make_confirm_message_received_fn_protobuf,
+    make_pull_object_fn_protobuf,
+    make_push_object_fn_protobuf,
+)
 from flwr.supercore.primitives.asymmetric import generate_key_pairs, public_key_to_bytes
 
 from .grpc_adapter import GrpcAdapter
@@ -75,16 +74,16 @@ def grpc_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
     insecure: bool,
     retry_invoker: RetryInvoker,
     max_message_length: int = GRPC_MAX_MESSAGE_LENGTH,  # pylint: disable=W0613
-    root_certificates: Optional[Union[bytes, str]] = None,
-    authentication_keys: Optional[
-        tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey]
-    ] = None,
-    adapter_cls: Optional[Union[type[FleetStub], type[GrpcAdapter]]] = None,
+    root_certificates: bytes | str | None = None,
+    authentication_keys: (
+        tuple[ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey] | None
+    ) = None,
+    adapter_cls: type[FleetStub] | type[GrpcAdapter] | None = None,
 ) -> Iterator[
     tuple[
         int,
-        Callable[[], Optional[tuple[Message, ObjectTree]]],
-        Callable[[Message, ObjectTree], set[str]],
+        Callable[[], tuple[Message, ObjectTree] | None],
+        Callable[[Message, ObjectTree, float], set[str]],
         Callable[[int], Run],
         Callable[[str, int], Fab],
         Callable[[int, str], bytes],
@@ -129,7 +128,7 @@ def grpc_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
     -------
     node_id : int
     receive : Callable[[], Optional[tuple[Message, ObjectTree]]]
-    send : Callable[[Message, ObjectTree], set[str]]
+    send : Callable[[Message, ObjectTree, float], set[str]]
     get_run : Callable[[int], Run]
     get_fab : Callable[[str, int], Fab]
     pull_object : Callable[[str], bytes]
@@ -137,7 +136,7 @@ def grpc_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
     confirm_message_received : Callable[[str], None]
     """
     if isinstance(root_certificates, str):
-        root_certificates = Path(root_certificates).read_bytes()
+        root_certificates = Path(root_certificates).expanduser().read_bytes()
 
     # Automatic node auth: generate keys if user didn't provide any
     self_registered = False
@@ -163,10 +162,10 @@ def grpc_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
     if adapter_cls is None:
         adapter_cls = FleetStub
     stub = adapter_cls(channel)
-    node: Optional[Node] = None
+    node: Node | None = None
 
     # Wrap stub
-    _wrap_stub(stub, retry_invoker)
+    wrap_stub(stub, retry_invoker)
     ###########################################################################
     # SuperNode functions
     ###########################################################################
@@ -253,7 +252,7 @@ def grpc_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
         # Cleanup
         node = None
 
-    def receive() -> Optional[tuple[Message, ObjectTree]]:
+    def receive() -> tuple[Message, ObjectTree] | None:
         """Pull a message with its ObjectTree from SuperLink."""
         # Get Node
         if node is None:
@@ -278,7 +277,9 @@ def grpc_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
         # Return the Message and its object tree
         return in_message, object_tree
 
-    def send(message: Message, object_tree: ObjectTree) -> set[str]:
+    def send(
+        message: Message, object_tree: ObjectTree, clientapp_runtime: float
+    ) -> set[str]:
         """Send the message with its ObjectTree to SuperLink."""
         # Get Node
         if node is None:
@@ -294,6 +295,7 @@ def grpc_request_response(  # pylint: disable=R0913,R0914,R0915,R0917
             node=node,
             messages_list=[message_to_proto(message)],
             message_object_trees=[object_tree],
+            clientapp_runtime_list=[clientapp_runtime],
         )
         response: PushMessagesResponse = stub.PushMessages(request=request)
 

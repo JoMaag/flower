@@ -17,18 +17,11 @@
 
 import threading
 from logging import DEBUG, ERROR, INFO
-from typing import Optional
 
 import grpc
 
 from flwr.common import Message
 from flwr.common.constant import SUPERLINK_NODE_ID, Status
-from flwr.common.inflatable import (
-    UnexpectedObjectContentError,
-    get_all_nested_objects,
-    get_object_tree,
-    no_object_id_recompute,
-)
 from flwr.common.logger import log
 from flwr.common.serde import (
     context_from_proto,
@@ -37,7 +30,6 @@ from flwr.common.serde import (
     message_from_proto,
     message_to_proto,
     run_status_from_proto,
-    run_status_to_proto,
     run_to_proto,
 )
 from flwr.common.typing import Fab, RunStatus
@@ -56,7 +48,6 @@ from flwr.proto.appio_pb2 import (  # pylint: disable=E0611
     RequestTokenRequest,
     RequestTokenResponse,
 )
-from flwr.proto.fab_pb2 import GetFabRequest, GetFabResponse  # pylint: disable=E0611
 from flwr.proto.heartbeat_pb2 import (  # pylint: disable=E0611
     SendAppHeartbeatRequest,
     SendAppHeartbeatResponse,
@@ -77,8 +68,6 @@ from flwr.proto.node_pb2 import Node  # pylint: disable=E0611
 from flwr.proto.run_pb2 import (  # pylint: disable=E0611
     GetRunRequest,
     GetRunResponse,
-    GetRunStatusRequest,
-    GetRunStatusResponse,
     UpdateRunStatusRequest,
     UpdateRunStatusResponse,
 )
@@ -89,9 +78,14 @@ from flwr.proto.serverappio_pb2 import (  # pylint: disable=E0611
 from flwr.server.superlink.linkstate import LinkState, LinkStateFactory
 from flwr.server.superlink.utils import abort_if
 from flwr.server.utils.validator import validate_message
-from flwr.supercore.ffs import Ffs, FfsFactory
+from flwr.supercore.ffs import FfsFactory
+from flwr.supercore.inflatable.inflatable_object import (
+    UnexpectedObjectContentError,
+    get_all_nested_objects,
+    get_object_tree,
+    no_object_id_recompute,
+)
 from flwr.supercore.object_store import NoObjectInStoreError, ObjectStoreFactory
-from flwr.supercore.object_store.utils import store_mapping_and_register_objects
 
 
 class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
@@ -120,11 +114,9 @@ class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
         state = self.state_factory.state()
 
         # Get IDs of runs in pending status
-        run_ids = state.get_run_ids(flwr_aid=None)
-        pending_run_ids = []
-        for run_id, status in state.get_run_status(run_ids).items():
-            if status.status == Status.PENDING:
-                pending_run_ids.append(run_id)
+        pending_run_ids = [
+            run.run_id for run in state.get_run_info(statuses=[Status.PENDING])
+        ]
 
         # Return run IDs
         return ListAppsToLaunchResponse(run_ids=pending_run_ids)
@@ -140,6 +132,13 @@ class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
 
         # Attempt to create a token for the provided run ID
         token = state.create_token(request.run_id)
+
+        # Transition the run to STARTING if token creation was successful
+        if token:
+            state.update_run_status(
+                run_id=request.run_id,
+                new_status=RunStatus(Status.STARTING, "", ""),
+            )
 
         # Return the token
         return RequestTokenResponse(token=token or "")
@@ -192,8 +191,11 @@ class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
             request_name="PushMessages",
             detail="`messages_list` must not be empty",
         )
-        message_ids: list[Optional[str]] = []
-        for message_proto in request.messages_list:
+        message_ids: list[str | None] = []
+        objects_to_push: set[str] = set()
+        for message_proto, object_tree in zip(
+            request.messages_list, request.message_object_trees, strict=True
+        ):
             message = message_from_proto(message_proto=message_proto)
             validation_errors = validate_message(message, is_reply_message=False)
             _raise_if(
@@ -206,12 +208,11 @@ class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
                 request_name="PushMessages",
                 detail="`Message.metadata` has mismatched `run_id`",
             )
-            # Store
-            message_id: Optional[str] = state.store_message_ins(message=message)
+            # Store objects
+            objects_to_push |= set(store.preregister(request.run_id, object_tree))
+            # Store message
+            message_id: str | None = state.store_message_ins(message=message)
             message_ids.append(message_id)
-
-        # Store Message object to descendants mapping and preregister objects
-        objects_to_push = store_mapping_and_register_objects(store, request=request)
 
         return PushAppMessagesResponse(
             message_ids=[
@@ -301,25 +302,12 @@ class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
         state: LinkState = self.state_factory.state()
 
         # Retrieve run information
-        run = state.get_run(request.run_id)
+        runs = state.get_run_info(run_ids=[request.run_id])
 
-        if run is None:
+        if not runs:
             return GetRunResponse()
 
-        return GetRunResponse(run=run_to_proto(run))
-
-    def GetFab(
-        self, request: GetFabRequest, context: grpc.ServicerContext
-    ) -> GetFabResponse:
-        """Get FAB from Ffs."""
-        log(DEBUG, "ServerAppIoServicer.GetFab")
-
-        ffs: Ffs = self.ffs_factory.ffs()
-        if result := ffs.get(request.hash_str):
-            fab = Fab(request.hash_str, result[0], result[1])
-            return GetFabResponse(fab=fab_to_proto(fab))
-
-        raise ValueError(f"Found no FAB with hash: {request.hash_str}")
+        return GetRunResponse(run=run_to_proto(runs[0]))
 
     def PullAppInputs(
         self, request: PullAppInputsRequest, context: grpc.ServicerContext
@@ -339,14 +327,15 @@ class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
 
             # Retrieve Context, Run and Fab for the run_id
             serverapp_ctxt = state.get_serverapp_context(run_id)
-            run = state.get_run(run_id)
+            runs = state.get_run_info(run_ids=[run_id])
+            run = runs[0] if runs else None
             fab = None
             if run and run.fab_hash:
                 if result := ffs.get(run.fab_hash):
                     fab = Fab(run.fab_hash, result[0], result[1])
             if run and fab and serverapp_ctxt:
-                # Update run status to STARTING
-                if state.update_run_status(run_id, RunStatus(Status.STARTING, "", "")):
+                # Update run status to RUNNING
+                if state.update_run_status(run_id, RunStatus(Status.RUNNING, "", "")):
                     log(INFO, "Starting run %d", run_id)
                     return PullAppInputsResponse(
                         context=context_to_proto(serverapp_ctxt),
@@ -355,8 +344,12 @@ class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
                     )
 
         # Raise an exception if the Run or Fab is not found,
-        # or if the status cannot be updated to STARTING
-        raise RuntimeError(f"Failed to start run {run_id}")
+        # or if the status cannot be updated to RUNNING
+        context.abort(
+            grpc.StatusCode.FAILED_PRECONDITION,
+            f"Failed to start run {run_id}",
+        )
+        raise RuntimeError("Unreachable code")  # for mypy
 
     def PushAppOutputs(
         self, request: PushAppOutputsRequest, context: grpc.ServicerContext
@@ -423,38 +416,17 @@ class ServerAppIoServicer(serverappio_pb2_grpc.ServerAppIoServicer):
         state.add_serverapp_log(request.run_id, merged_logs)
         return PushLogsResponse()
 
-    def GetRunStatus(
-        self, request: GetRunStatusRequest, context: grpc.ServicerContext
-    ) -> GetRunStatusResponse:
-        """Get the status of a run."""
-        log(DEBUG, "ServerAppIoServicer.GetRunStatus")
-        state = self.state_factory.state()
-
-        # Get run status from LinkState
-        run_statuses = state.get_run_status(set(request.run_ids))
-        run_status_dict = {
-            run_id: run_status_to_proto(run_status)
-            for run_id, run_status in run_statuses.items()
-        }
-        return GetRunStatusResponse(run_status_dict=run_status_dict)
-
     def SendAppHeartbeat(
         self, request: SendAppHeartbeatRequest, context: grpc.ServicerContext
     ) -> SendAppHeartbeatResponse:
-        """Handle a heartbeat from the ServerApp."""
+        """Handle a heartbeat from an app process."""
         log(DEBUG, "ServerAppIoServicer.SendAppHeartbeat")
 
         # Init state
         state = self.state_factory.state()
 
         # Acknowledge the heartbeat
-        # The app heartbeat can only be acknowledged if the run is in
-        # starting or running status.
-        success = state.acknowledge_app_heartbeat(
-            run_id=request.run_id,
-            heartbeat_interval=request.heartbeat_interval,
-        )
-
+        success = state.acknowledge_app_heartbeat(request.token)
         return SendAppHeartbeatResponse(success=success)
 
     def PushObject(
