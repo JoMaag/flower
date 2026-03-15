@@ -1,7 +1,7 @@
 # Comparison: Centralized baseline — single agent, K×batch (oracle upper bound)
-# CartPole-v1, 1 worker, batch_size = 10 × 16 = 160
-env = "CartPole-v1"
-num-server-rounds = 312
+# Pursuit-v4, 1 worker, batch_size = 10 × 16 = 160
+env = "Pursuit-v4"
+num-server-rounds = 200
 num-workers = 1
 num-byzantine = 0
 method = "centralized"

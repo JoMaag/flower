@@ -1,0 +1,8 @@
+# Comparison: AFedPG / FedPG-BR — Byzantine filter + SCSG variance reduction
+# Pursuit-v4, 10 workers, no Byzantine
+env = "Pursuit-v4"
+num-server-rounds = 200
+num-workers = 10
+num-byzantine = 0
+method = "fedpg-br"
+use-adaptive-communication = false

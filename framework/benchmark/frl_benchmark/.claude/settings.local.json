@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(docker run:*)",
+      "Bash(find c:/Users/joelm -maxdepth 4 -name *.tex)",
+      "Bash(find c:/Users/joelm -maxdepth 6 -name *.tex)",
+      "Bash(docker network:*)",
+      "Bash(findstr frl:*)",
+      "Bash(python -:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(mv experiments:*)",
+      "Bash(mv \"ETH_Zurich_DISCO_Thesis_Template__1_\" thesis/writing/eth_template)",
+      "Bash(mv \"DISCO_Thesis_Joel.pdf\" thesis/writing/)",
+      "Bash(mv \"Academic Communication Playbook.pdf\" thesis/writing/)",
+      "Bash(mv \"Flint_Paper.pdf\" thesis/writing/)"
+    ]
+  }
+}

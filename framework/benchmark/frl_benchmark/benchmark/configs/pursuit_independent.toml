@@ -1,0 +1,8 @@
+# Comparison: Independent Learning — no federation, each worker trains alone
+# Pursuit-v4, 10 workers (only worker-0 gradient applied), no Byzantine
+env = "Pursuit-v4"
+num-server-rounds = 200
+num-workers = 10
+num-byzantine = 0
+method = "independent"
+use-adaptive-communication = false

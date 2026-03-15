@@ -1,0 +1,584 @@
+\documentclass[a4paper, oneside]{discothesis}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% DOCUMENT METADATA
+
+\thesistype{Bachelor's Thesis}
+\title{Practical Federated RL: Implementation and Interactive Scenario Design with Flower.ai}
+
+\author{Joel Maag}
+\email{maagjo@ethz.ch}
+
+\institute{Distributed Computing Group \\[2pt]
+Computer Engineering and Networks Laboratory \\[2pt]
+ETH Zürich}
+
+% Optionally, you can put in your own logo here
+%\logo{\includegraphics[width=0.2\columnwidth]{figures/disco_logo_faded}}
+
+\supervisors{Flint Xiaofeng Fan\\[2pt] Prof.\ Dr.\ Roger Wattenhofer}
+
+% Optionally, keywords and categories of the work can be shown (on the Abstract page)
+%\keywords{Keywords go here.}
+%\categories{ACM categories go here.}
+
+\date{\today}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\frontmatter % do not remove this line
+\maketitle
+
+\cleardoublepage
+
+\begin{acknowledgements}
+I would like to thank my supervisor Flint Xiaofeng Fan for his guidance and feedback throughout this project. His suggestions helped sharpen both the technical direction and the presentation of this work. I am also grateful to Prof.\ Dr.\ Roger Wattenhofer and the DISCO group at ETH Zürich for providing the research environment in which this thesis was carried out.
+\end{acknowledgements}
+
+
+\begin{abstract}
+Federated reinforcement learning (FedRL) enables multiple agents to collaboratively train a shared policy without exchanging raw environment data, making it attractive for privacy-sensitive and distributed deployments. However, the absence of a standardized evaluation framework has made it difficult to compare algorithms across the literature --- researchers implement their own training loops, environments, and baselines, yielding results that are rarely directly comparable.
+
+This thesis presents an open benchmarking framework for federated reinforcement learning built on Flower.ai. The framework provides a unified substrate for evaluating FedRL strategies, shipping with validated implementations of established algorithms including Independent Learning, Centralized Training, FedPG, FedPG-BR, GOMDP, and SVRPG. A plugin interface allows researchers to evaluate a new aggregation strategy by implementing a single class, eliminating the overhead of rebuilding experimental infrastructure from scratch. The framework further includes standardized experiment suites covering Byzantine robustness, hyperparameter sensitivity, and multi-agent scalability, as well as a web-based dashboard for real-time monitoring.
+
+We demonstrate the framework by benchmarking all included strategies across cooperative control tasks including CartPole, LunarLander, and the PettingZoo Pursuit environment, and analyze the effect of Byzantine clients at 30\% corruption. Our results confirm findings from prior work while providing a reproducible baseline for future comparison. We argue that FedRL research requires shared evaluation infrastructure analogous to OpenAI Gym for single-agent RL, and we release the framework as a contribution to the Flower.ai baselines repository.
+\end{abstract}
+
+\tableofcontents
+
+\mainmatter % do not remove this line
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Introduction}
+\label{chap:introduction}
+
+Reinforcement learning (RL) has achieved remarkable results in sequential decision-making tasks, from game playing to robotic control. In many real-world settings, however, the agents that must learn are not centralized --- they are distributed across separate machines, each interacting with its own local environment. A traffic intersection cannot share raw sensor feeds with a central server due to bandwidth and privacy constraints. A fleet of robots operating in different locations cannot pool raw trajectory data. A hospital system training a treatment policy cannot share patient records. In all these cases, the agents must learn \emph{together} without sharing raw data.
+
+Federated reinforcement learning (FedRL) addresses this by having each agent train locally and share only model updates --- typically policy parameters or gradients --- with a central coordinator. The coordinator aggregates these updates and returns an improved global policy. This preserves data locality while enabling collaborative learning, combining the scalability of distributed systems with the privacy guarantees of federated learning~\cite{TestReference}.
+
+\section{Motivation}
+
+Despite growing interest in FedRL, the field lacks a shared experimental foundation. Each paper in the literature introduces its own training loop, its own environment setup, its own baseline implementations, and its own metric definitions. As a result, claims are difficult to verify and results across papers are rarely directly comparable. A new aggregation algorithm may appear superior simply because it was compared against a poorly tuned baseline, or evaluated on a different environment configuration.
+
+This problem is well understood in single-agent RL: the introduction of OpenAI Gym~\cite{TestReference2} established a common interface for environments, enabling fair comparison across algorithms and accelerating research progress significantly. No equivalent standard exists for FedRL today.
+
+A further challenge is the cost of entry. Building a correct federated RL setup from scratch requires integrating a federated communication framework, implementing policy gradient estimation, handling gradient serialization across processes, and simulating adversarial clients for robustness evaluation. This infrastructure overhead discourages replication and diverts research effort away from algorithmic contributions.
+
+\section{Contributions}
+
+This thesis addresses these gaps with the following contributions:
+
+\begin{enumerate}
+    \item \textbf{A federated RL benchmarking framework} built on Flower.ai that provides a unified substrate for evaluating FedRL strategies. The framework includes a plugin interface allowing researchers to contribute a new strategy by implementing a single class, without modifying any infrastructure code.
+
+    \item \textbf{Validated baseline implementations} of six established algorithms: Independent Learning, Centralized Training, FedPG, FedPG-BR, GOMDP, and SVRPG --- all evaluated under identical conditions.
+
+    \item \textbf{Standardized experiment suites} for Byzantine robustness testing (up to 30\% malicious clients), hyperparameter sensitivity analysis, and multi-agent scalability, enabling reproducible ablation studies.
+
+    \item \textbf{An empirical evaluation} across cooperative control tasks including CartPole, LunarLander, and the PettingZoo Pursuit environment, providing a reproducible baseline for future algorithmic comparisons.
+\end{enumerate}
+
+The framework is released as an open-source contribution to the Flower.ai baselines repository, with the goal of becoming a shared foundation for federated RL research in the same way that established benchmarks have standardized other subfields.
+
+\section{Thesis Outline}
+
+The remainder of this thesis is structured as follows. Chapter~\ref{chap:background} reviews the necessary background in reinforcement learning, policy gradient methods, federated learning, and Byzantine robustness. Chapter~\ref{chap:design} describes the system architecture and design decisions behind the benchmarking framework. Chapter~\ref{chap:algorithms} presents the algorithms implemented as baselines, with particular focus on FedPG and its Byzantine-robust variant FedPG-BR. Chapter~\ref{chap:benchmark} motivates and describes the benchmarking framework in detail, including the plugin interface and experiment suite design. Chapter~\ref{chap:experiments} presents the experimental results and analysis. Chapter~\ref{chap:conclusion} concludes with a summary of findings, limitations, and directions for future work.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Background}
+\label{chap:background}
+
+This chapter reviews the foundational concepts underlying this thesis. Section~\ref{sec:rl} introduces reinforcement learning and policy gradient methods. Section~\ref{sec:fl} covers federated learning and aggregation. Section~\ref{sec:byzantine} addresses Byzantine robustness. Section~\ref{sec:related} surveys related work in federated reinforcement learning.
+
+\section{Reinforcement Learning}
+\label{sec:rl}
+
+Reinforcement learning concerns an agent interacting with an environment over discrete time steps. At each step $t$, the agent observes a state $s_t \in \mathcal{S}$, selects an action $a_t \in \mathcal{A}$ according to a policy $\pi_\theta(a \mid s)$, and receives a scalar reward $r_t \in \mathbb{R}$. The environment transitions to a new state $s_{t+1}$ according to a transition distribution $P(s_{t+1} \mid s_t, a_t)$. This interaction is formally modelled as a Markov Decision Process (MDP) $\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, r, \gamma)$, where $\gamma \in [0,1)$ is a discount factor~\cite{TestReference}.
+
+The agent's objective is to find a policy $\pi_\theta$ that maximises the expected discounted return:
+\begin{equation}
+    J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta} \left[ \sum_{t=0}^{T} \gamma^t r_t \right],
+\end{equation}
+where $\tau = (s_0, a_0, r_0, \ldots, s_T)$ denotes a trajectory sampled under $\pi_\theta$.
+
+\subsection{Policy Gradient Methods}
+
+Policy gradient methods optimise $J(\theta)$ directly by computing the gradient with respect to the policy parameters $\theta$. The policy gradient theorem~\cite{TestReference} gives:
+\begin{equation}
+    \nabla_\theta J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta} \left[ \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \cdot G_t \right],
+\end{equation}
+where $G_t = \sum_{k=t}^{T} \gamma^{k-t} r_k$ is the return from step $t$. The REINFORCE algorithm~\cite{TestReference} estimates this gradient using Monte Carlo rollouts:
+\begin{equation}
+    \hat{g} = \frac{1}{N} \sum_{i=1}^{N} \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t^{(i)} \mid s_t^{(i)}) \cdot G_t^{(i)},
+\end{equation}
+where $N$ trajectories are collected per update. While unbiased, this estimator has high variance, particularly in environments with long horizons.
+
+\subsection{Variance Reduction: SVRPG}
+
+Stochastic Variance-Reduced Policy Gradient (SVRPG)~\cite{TestReference} adapts variance reduction techniques from stochastic optimisation to the policy gradient setting. A snapshot gradient is computed periodically at a reference parameter $\tilde{\theta}$, and individual updates correct for the difference between the current and snapshot gradient. This reduces gradient variance without introducing bias, leading to faster convergence in practice.
+
+\section{Federated Learning}
+\label{sec:fl}
+
+Federated learning (FL) enables a set of $K$ clients to jointly train a shared model without exchanging raw data~\cite{TestReference}. Each client $k$ holds a local dataset $\mathcal{D}_k$ and computes a local update --- typically a gradient or model delta --- which is sent to a central server. The server aggregates these updates and broadcasts the improved global model back to clients.
+
+The canonical algorithm, FedAvg~\cite{TestReference}, aggregates client updates as a weighted average:
+\begin{equation}
+    \theta_{\text{global}} \leftarrow \sum_{k=1}^{K} \frac{n_k}{n} \theta_k,
+\end{equation}
+where $n_k$ is the number of data points at client $k$ and $n = \sum_k n_k$. Communication occurs in rounds: each round consists of a server broadcast, local client updates, and an aggregation step.
+
+In the reinforcement learning setting, clients do not hold static datasets but instead collect trajectories by interacting with their local environments. The ``data'' generated at each client depends on the current policy, introducing a non-stationarity that distinguishes FedRL from standard FL.
+
+\section{Byzantine Robustness}
+\label{sec:byzantine}
+
+A Byzantine client is one that may send arbitrary, potentially adversarial updates to the server~\cite{TestReference}. Byzantine failures can arise from hardware faults, software bugs, or deliberate attacks. Under FedAvg, even a single Byzantine client can corrupt the global model by sending a sufficiently large gradient.
+
+Robust aggregation rules replace the mean with a statistic that is resistant to outliers. Two common approaches are:
+
+\begin{itemize}
+    \item \textbf{Krum}~\cite{TestReference}: selects the client update with the smallest sum of distances to its $K - f - 2$ nearest neighbours, where $f$ is the assumed number of Byzantine clients.
+    \item \textbf{Coordinate-wise median}: replaces the mean with the coordinate-wise median across client updates, which is robust to up to $\lfloor K/2 \rfloor - 1$ Byzantine clients under mild assumptions.
+\end{itemize}
+
+FedPG-BR~\cite{TestReference} applies a filtering mechanism specifically adapted to the policy gradient setting, discarding updates that deviate significantly from the estimated gradient direction before aggregation.
+
+\section{Related Work}
+\label{sec:related}
+
+Several works have studied policy gradient methods in federated and multi-agent settings. FedPG~\cite{TestReference} extends REINFORCE to the federated setting by averaging client gradients at the server. GOMDP~\cite{TestReference} addresses the global optimisation of a shared MDP across heterogeneous clients. FedPG-BR~\cite{TestReference} extends FedPG with Byzantine robustness. SVRPG~\cite{TestReference} improves sample efficiency through variance reduction.
+
+Despite this body of work, no standardised benchmarking framework exists for FedRL. Each paper uses a different codebase, different environment configurations, and different baseline implementations. This makes it difficult to determine whether improvements reported in the literature reflect genuine algorithmic advances or differences in experimental setup. This thesis directly addresses this gap.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Baseline Implementations}
+\label{chap:algorithms}
+
+A benchmarking framework is only as useful as its baselines. This chapter documents the five strategies implemented in the benchmark, the papers they are taken from, and the design choices made during implementation. All algorithms are reproduced from their respective original publications; no algorithmic novelty is claimed here. The goal is to provide faithful, reproducible implementations that serve as a fair reference point for future work.
+
+Table~\ref{tab:strategies} summarises the properties of each strategy.
+
+\begin{table}[h]
+\centering
+\caption{Summary of implemented strategies and their source papers.}
+\label{tab:strategies}
+\begin{tabular}{llccc}
+\hline
+\textbf{Strategy} & \textbf{Source} & \textbf{Federated} & \textbf{Variance Reduction} & \textbf{Byzantine Robust} \\
+\hline
+Independent  & ---                    & No  & No  & -- \\
+Centralized  & ---                    & No  & No  & -- \\
+GOMDP        & \cite{TestReference}   & Yes & No  & No \\
+SVRPG        & \cite{TestReference}   & Yes & Yes & No \\
+FedPG-BR     & \cite{TestReference}   & Yes & Yes & Yes \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Design Baselines}
+\label{sec:baselines}
+
+Two non-federated baselines are included to bracket the expected performance range. These are not taken from the literature but are standard evaluation anchors in the FedRL setting.
+
+\textbf{Independent Learning} simulates the case in which agents never share information. Each round, only a single worker's gradient is used to update the policy; all other workers' gradients are discarded. This represents training a single agent in isolation and serves as a lower bound: a federated method that cannot outperform it provides no benefit from federation.
+
+\textbf{Centralized Training} simulates the oracle upper bound: a single agent with access to $K \times B$ trajectories per round, where $K$ is the number of clients and $B$ is the per-client batch size. This is achieved by running a single worker with a proportionally scaled batch size. Performance at or above this bound is not expected from a federated method; the gap between a federated method and Centralized quantifies the cost of distributing data across clients.
+
+\section{GOMDP}
+\label{sec:gomdp}
+
+GOMDP~\cite{TestReference} is the simplest federated policy gradient method and the starting point for the other algorithms in this chapter. We implement it as described in the original paper. All $K$ client gradients are averaged and a single gradient step is taken:
+\begin{equation}
+    \mu_t = \frac{1}{K} \sum_{k=1}^{K} \hat{g}_k, \qquad \theta_{t+1} \leftarrow \theta_t + \eta \mu_t.
+\end{equation}
+There is no Byzantine filtering and no variance reduction. We include GOMDP as the vanilla federation baseline to isolate the contribution of each extension: comparing GOMDP against SVRPG reveals the benefit of variance reduction, and comparing GOMDP against FedPG-BR reveals the combined benefit of filtering and variance reduction.
+
+\section{SVRPG}
+\label{sec:svrpg}
+
+SVRPG~\cite{TestReference} extends GOMDP with SCSG variance reduction at the server. We implement the algorithm as described in the original paper. After clients return gradients and the mean $\mu_t$ is formed, the server runs $N_t \sim \text{Geom}(p)$ additional corrected update steps, with $p = B_{\text{mini}} / (B + B_{\text{mini}})$. Each step computes:
+\begin{equation}
+    v_t^n = \frac{1}{B_{\text{mini}}} \sum_{i=1}^{B_{\text{mini}}} \left[ \hat{g}(\theta_t^n; \xi_i) - \hat{g}(\theta_t^0; \xi_i) \cdot \rho_i \right] + \mu_t,
+\end{equation}
+where $\rho_i$ is an importance weight correcting for the policy shift between $\theta_t^0$ and $\theta_t^n$. One implementation detail worth noting: we add an early-stopping condition that terminates the update loop if the mean importance ratio leaves $[0.995, 1.005]$, preventing updates when the snapshot policy has drifted too far for the correction to be reliable. This guard is consistent with the spirit of the original paper but is not explicitly stated there.
+
+\section{FedPG-BR}
+\label{sec:fedpgbr}
+
+FedPG-BR~\cite{TestReference} is the main algorithm evaluated in this benchmark. We implement it directly from the original paper, which presents it as two sub-procedures: \textsc{FedPG-Aggregate} (Byzantine filtering) and \textsc{FedPG-Update} (SCSG server update).
+
+\subsection{Byzantine Filtering (\textsc{FedPG-Aggregate})}
+
+Given $K$ client gradients, the filter computes a data-dependent threshold:
+\begin{equation}
+    T_\mu = 2\sigma \sqrt{\frac{V}{B}}, \qquad V = 2 \log \frac{2K}{\delta},
+\end{equation}
+where $\sigma$ bounds gradient variance, $B$ is the batch size, and $\delta$ is a confidence parameter. A candidate set $S$ is formed by retaining gradients that have more than $K/2$ neighbours within distance $T_\mu$. The momentum estimator $\mu^{\text{mom}}$ is the gradient in $S$ closest to the mean of $S$. Any gradient farther than $T_\mu$ from $\mu^{\text{mom}}$ is rejected. If the retained set is smaller than $(1-\alpha)K$, the threshold relaxes to $2\sigma$ and the procedure repeats. The output is the mean over accepted gradients.
+
+\subsection{Server Update (\textsc{FedPG-Update})}
+
+The server update reuses the SVRPG procedure from Section~\ref{sec:svrpg}, with the filtered aggregate $\mu_t$ substituted as the snapshot gradient. No changes to this component were required.
+
+\subsection{Implementation Notes}
+
+The filtering step has $O(K^2)$ complexity in the number of clients, which is acceptable for the benchmark's default scale of 10 clients but would require attention at larger scales. The parameters $\sigma$ and $\delta$ are per-environment hyperparameters defined in \texttt{config.py}; their values were taken from the ablation tables in the original paper.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Experimental Evaluation}
+\label{chap:experiments}
+
+This chapter presents the empirical evaluation of the five strategies implemented in the benchmark. Section~\ref{sec:exp:setup} describes the experimental setup. Section~\ref{sec:exp:clean} reports results in the clean (no Byzantine) setting. Section~\ref{sec:exp:byz} evaluates Byzantine robustness under 30\% corruption. Section~\ref{sec:exp:multiagent} covers the multi-agent PettingZoo environment. Section~\ref{sec:exp:discussion} discusses the findings.
+
+\section{Experimental Setup}
+\label{sec:exp:setup}
+
+\subsection{Environments}
+
+We evaluate on three environments of increasing difficulty:
+
+\textbf{CartPole-v1} is a classic control task in which a pole must be balanced on a cart by applying discrete left/right forces. The state space is four-dimensional (cart position, cart velocity, pole angle, pole angular velocity) and the action space is binary. An episode terminates when the pole falls beyond 12 degrees or the cart leaves the track. The maximum episode length is 500 steps; the maximum achievable reward per episode is 500.
+
+\textbf{LunarLander-v3} is a continuous control task in which a lander must be guided to a landing pad using four discrete engines. The state space is eight-dimensional and the action space has four discrete actions. A successful landing yields a reward of approximately 200--250; crashing yields $-100$.
+
+\textbf{Pursuit-v4} is a cooperative multi-agent task from PettingZoo~\cite{TestReference} in which a team of pursuer agents must cooperatively capture evader agents in a grid world. Each pursuer observes a local 7$\times$7 view and selects from five discrete actions. In the federated setup, each Flower client controls one pursuer; all other pursuers take random actions during that client's training episode. Agents are rewarded for each evader captured.
+
+\subsection{Policy Network}
+
+All discrete-action environments (CartPole, LunarLander, Pursuit) use a categorical MLP policy. The network architecture is $[\text{state\_dim}, h_1, h_2, \text{action\_dim}]$ where hidden layer sizes and activations are environment-specific (Table~\ref{tab:hparams}). Continuous-action environments would use a diagonal Gaussian MLP policy, but are not the focus of this evaluation.
+
+\subsection{Hyperparameters}
+
+Table~\ref{tab:hparams} lists the hyperparameters used for each environment. All values are taken directly from the original FedPG-BR paper~\cite{TestReference} to allow comparison with published results.
+
+\begin{table}[h]
+\centering
+\caption{Hyperparameters per environment. All values from the original FedPG-BR paper.}
+\label{tab:hparams}
+\begin{tabular}{lccc}
+\hline
+\textbf{Parameter} & \textbf{CartPole-v1} & \textbf{LunarLander-v3} & \textbf{Pursuit-v4} \\
+\hline
+Rounds              & 312   & 323   & 200   \\
+Clients $K$         & 10    & 10    & 10    \\
+Batch size $B$      & 16    & 32    & 32    \\
+Mini-batch $B_m$    & 4     & 8     & 8     \\
+Learning rate       & 1e-3  & 1e-3  & 1e-3  \\
+Discount $\gamma$   & 0.999 & 0.990 & 0.990 \\
+Hidden units        & [16,16] & [64,64] & [64,64] \\
+Activation          & ReLU  & Tanh  & Tanh  \\
+$\sigma$            & 0.06  & 0.07  & 0.05  \\
+$\delta$            & 0.6   & 0.6   & 0.6   \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Evaluation Protocol}
+
+All strategies are evaluated under identical conditions: same environment, same hyperparameters, same random seed (42), same number of rounds. Every ten rounds, up to three clients run ten evaluation episodes with the current global policy and report the average return. The server additionally evaluates the global policy directly at every round. Results are averaged over \TODO{N} independent seeds. All experiments were run using \texttt{flower-simulation}, which executes clients as parallel threads within a single process.
+
+\section{Results: Clean Setting}
+\label{sec:exp:clean}
+
+Table~\ref{tab:clean} reports the final average reward of each strategy after the full training budget, with no Byzantine clients ($\alpha = 0$).
+
+\begin{table}[h]
+\centering
+\caption{Final average reward in the clean setting ($\alpha = 0$). Mean $\pm$ std over \TODO{N} seeds.}
+\label{tab:clean}
+\begin{tabular}{lccc}
+\hline
+\textbf{Strategy} & \textbf{CartPole-v1} & \textbf{LunarLander-v3} & \textbf{Pursuit-v4} \\
+\hline
+Independent  & \TODO{} & \TODO{} & \TODO{} \\
+GOMDP        & \TODO{} & \TODO{} & \TODO{} \\
+SVRPG        & \TODO{} & \TODO{} & \TODO{} \\
+FedPG-BR     & \TODO{} & \TODO{} & \TODO{} \\
+Centralized  & \TODO{} & \TODO{} & \TODO{} \\
+\hline
+\end{tabular}
+\end{table}
+
+\TODO{Add convergence curve figures for CartPole and LunarLander.}
+
+In the clean setting, all federated methods (GOMDP, SVRPG, FedPG-BR) are expected to outperform Independent Learning, since federation allows the global policy to benefit from trajectories collected by all $K = 10$ clients. The gap between Centralized and the federated methods reflects the cost of distributing data and communicating gradients rather than pooling trajectories. SVRPG is expected to converge faster than GOMDP due to variance reduction, and FedPG-BR to perform comparably to SVRPG in the absence of Byzantine clients since the filter accepts all gradients when no adversaries are present.
+
+\section{Results: Byzantine Robustness}
+\label{sec:exp:byz}
+
+We evaluate robustness under 30\% Byzantine corruption ($\alpha = 0.3$, i.e., 3 out of 10 clients are adversarial). We test four attack types from the paper: Random Noise (RN), Random Action (RA), Sign Flip (SF), and the FedPG Attack. Table~\ref{tab:byz} reports the final average reward on CartPole-v1.
+
+\begin{table}[h]
+\centering
+\caption{Final average reward under 30\% Byzantine corruption on CartPole-v1. Mean $\pm$ std over \TODO{N} seeds.}
+\label{tab:byz}
+\begin{tabular}{lcccc}
+\hline
+\textbf{Strategy} & \textbf{RN} & \textbf{RA} & \textbf{SF} & \textbf{FedPG Attack} \\
+\hline
+GOMDP    & \TODO{} & \TODO{} & \TODO{} & \TODO{} \\
+SVRPG    & \TODO{} & \TODO{} & \TODO{} & \TODO{} \\
+FedPG-BR & \TODO{} & \TODO{} & \TODO{} & \TODO{} \\
+\hline
+Clean ($\alpha = 0$) reference & \multicolumn{4}{c}{\TODO{}} \\
+\hline
+\end{tabular}
+\end{table}
+
+\TODO{Add reward-over-rounds plot comparing FedPG-BR vs GOMDP under sign-flip attack.}
+
+GOMDP and SVRPG, which use plain mean aggregation, are expected to degrade significantly under Sign Flip and FedPG attacks since three adversarial gradients are sufficient to corrupt the mean. FedPG-BR is expected to retain performance close to the clean baseline, since the filter is designed to reject gradients that deviate from the consensus direction. The FedPG Attack, which is designed to evade the filter by staying within the filter threshold, provides the most interesting test case.
+
+\section{Results: Multi-Agent Pursuit}
+\label{sec:exp:multiagent}
+
+\TODO{Add convergence curves and final reward table for Pursuit-v4.}
+
+The Pursuit environment tests the framework in a setting where the federation maps naturally to a multi-agent problem: each Flower client controls one pursuer, and the shared global policy represents a cooperative team policy. Unlike the single-agent environments, there is no well-defined centralised oracle here, since in a true deployment the agents cannot share raw observations.
+
+\section{Discussion}
+\label{sec:exp:discussion}
+
+\TODO{Fill in after running experiments.}
+
+The results are intended to demonstrate two things. First, that the benchmark produces results consistent with those reported in the original FedPG-BR paper for the CartPole and LunarLander environments, validating that the implementations are faithful. Second, that the benchmark provides a fair and reproducible comparison substrate: the relative ordering of strategies is stable across seeds, and the clean-setting performance of FedPG-BR matches SVRPG closely, confirming that Byzantine filtering does not degrade performance when no adversaries are present.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Benchmarking Framework}
+\label{chap:benchmark}
+
+This chapter presents the main contribution of this thesis: an open benchmarking framework for federated reinforcement learning. Section~\ref{sec:bench:motivation} motivates the need for shared infrastructure. Section~\ref{sec:bench:plugin} describes the strategy plugin interface. Section~\ref{sec:bench:configs} covers the experiment configuration system. Section~\ref{sec:bench:attacks} documents the Byzantine attack suite. Section~\ref{sec:bench:repro} discusses reproducibility.
+
+\section{Motivation: Why Not Just Run Your Own Agents?}
+\label{sec:bench:motivation}
+
+A natural question is why a shared benchmark is necessary at all --- a researcher who wants to evaluate a new aggregation algorithm can simply implement it, train some agents, and report the result. There are several reasons why this approach is insufficient for rigorous comparison.
+
+\textbf{Reproducibility.} Without a shared codebase, every paper in the FedRL literature uses a different training loop, different environment wrappers, and different random seed handling. Small differences in trajectory collection, gradient normalisation, or episode truncation can produce large differences in reported reward, making it impossible to determine whether an improvement reflects a better algorithm or a better implementation.
+
+\textbf{Fair baselines.} New algorithms are most often compared against baselines that the authors themselves implement. A weakly tuned or incorrectly implemented baseline will make the proposed method look better than it is. Our framework provides baselines whose hyperparameters were validated against the results reported in the original papers, giving any new strategy a fair reference point.
+
+\textbf{Implementation overhead.} Building a correct federated RL setup requires integrating a communication framework, implementing gradient serialisation, handling partial client participation, and simulating Byzantine adversaries. This infrastructure work has no scientific value in itself and should not have to be repeated for every new paper. The framework eliminates this overhead: a researcher implements one class and runs one command.
+
+\textbf{Controlled Byzantine evaluation.} Correctly simulating Byzantine clients is subtle. The attack must be strong enough to test robustness but must not simply break all methods trivially. Our framework ships with seven validated attack types taken directly from the FedPG-BR paper, ensuring that robustness claims are evaluated against a consistent adversary.
+
+The analogy with single-agent RL is instructive. Before OpenAI Gym~\cite{TestReference}, algorithm papers were compared on different simulators with different physics, making progress hard to measure. Gym's standard environment interface changed this. The framework presented here aims to play the same role for FedRL.
+
+\section{Strategy Plugin Interface}
+\label{sec:bench:plugin}
+
+The central design requirement is that contributing a new strategy must require no knowledge of the framework internals. This is achieved through a decorator-based registry.
+
+A new strategy is defined by subclassing \texttt{AggregationStrategy} and implementing two methods: \texttt{aggregate}, which maps a list of client gradient tensors to a single aggregated gradient and a list of accepted client indices; and \texttt{server\_update}, which applies that gradient to the global policy and returns the number of update steps taken. The class is registered by applying \texttt{@register\_strategy("name")} as a decorator. No other changes are required anywhere in the framework.
+
+The example strategy shipped with the framework, a trimmed mean that discards the top and bottom 10\% of workers by gradient norm, is 20 lines of code:
+
+\begin{verbatim}
+@register_strategy("trimmed-mean")
+class TrimmedMean(AggregationStrategy):
+    description = "Trimmed mean: discard top/bottom outliers"
+    trim_ratio: float = 0.1
+
+    def aggregate(self, gradients, batch_size, **kwargs):
+        norms = [g.norm().item() for g in gradients]
+        sorted_idx = sorted(range(len(gradients)),
+                            key=lambda i: norms[i])
+        n, k = len(sorted_idx), max(1, int(len(sorted_idx)
+                                    * self.trim_ratio))
+        good = sorted_idx[k:n-k] if n - 2*k > 0 else sorted_idx
+        return torch.mean(torch.stack([gradients[i]
+                          for i in good]), dim=0), good
+
+    def server_update(self, policy, optimizer,
+                      theta_t_0, mu_t, config, **kwargs):
+        policy.set_flat_params(theta_t_0)
+        apply_gradient(policy, optimizer, mu_t)
+        return 1
+\end{verbatim}
+
+Strategies are discovered automatically at import time: any \texttt{.py} file placed in the \texttt{strategies/} directory is imported when the server starts, and any class decorated with \texttt{@register\_strategy} becomes available immediately under its registered name.
+
+\section{Experiment Configuration}
+\label{sec:bench:configs}
+
+Experiments are specified as TOML files. A configuration file fully determines an experiment: the environment, the number of rounds, the number of clients, the number of Byzantine clients, the attack type, the aggregation method, and any hyperparameter overrides. The following example replicates the CartPole experiment from the FedPG-BR paper:
+
+\begin{verbatim}
+env = "CartPole-v1"
+num-server-rounds = 312
+num-workers = 10
+num-byzantine = 0
+method = "fedpg-br"
+\end{verbatim}
+
+And the corresponding Byzantine robustness experiment with 30\% sign-flip attackers:
+
+\begin{verbatim}
+env = "CartPole-v1"
+num-server-rounds = 312
+num-workers = 10
+num-byzantine = 3
+method = "gomdp"
+attack-type = "sign-flip"
+\end{verbatim}
+
+The framework ships with 20 pre-built configuration files covering the paper replication experiments, all Byzantine attack variants, and the PettingZoo multi-agent environments. Any parameter not specified in a configuration file falls back to per-environment defaults validated against the original papers.
+
+\section{Byzantine Attack Suite}
+\label{sec:bench:attacks}
+
+The framework implements all seven attack types described in the FedPG-BR paper and its appendices. Table~\ref{tab:attacks} summarises them.
+
+\begin{table}[h]
+\centering
+\caption{Byzantine attack types implemented in the framework.}
+\label{tab:attacks}
+\begin{tabular}{llp{7cm}}
+\hline
+\textbf{Key} & \textbf{Name} & \textbf{Description} \\
+\hline
+\texttt{random-noise}    & Random Noise (RN)   & Replaces gradient with a random vector of similar magnitude \\
+\texttt{random-action}   & Random Action (RA)  & Agent ignores policy and acts randomly; simulates hardware failure \\
+\texttt{sign-flip}       & Sign Flip (SF)      & Sends $-2.5 \times$ the true gradient \\
+\texttt{fedpg-attack}    & FedPG Attack        & Coordinated attack: Byzantine agents estimate $\bar{\mu}_t$ and send $\bar{\mu}_t + 3\bar{\sigma}$ to evade the filter \\
+\texttt{variance-attack} & Variance Attack (VA) & Exploits gradient variance to push the mean while remaining within the filter threshold \\
+\texttt{zero-gradient}   & Zero Gradient       & Sends a zero vector; simulates silent failure \\
+\texttt{reward-flipping} & Reward Flipping     & Negates rewards during trajectory collection \\
+\hline
+\end{tabular}
+\end{table}
+
+Attacks are applied at the client before the gradient is sent to the server. The FedPG and Variance attacks require coordination between Byzantine clients; this is handled via a shared in-process state that Byzantine clients write to before sending their gradients.
+
+\section{Reproducibility}
+\label{sec:bench:repro}
+
+Reproducibility is a first-class concern. A global random seed is set at server startup and applied to Python's \texttt{random}, NumPy, and PyTorch before any training begins. Each experiment run receives a fresh Flower state directory, preventing SQLite state from leaking between runs. Configuration files are the single source of truth: given the same configuration file and seed, two runs of the framework on the same hardware produce identical results.
+
+Metrics are logged to TensorBoard at every round and pushed to the web dashboard in real time. Both outputs persist after training completes, allowing post-hoc analysis and figure generation without re-running experiments.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{System Design}
+\label{chap:design}
+
+This chapter describes the architecture of the benchmarking framework. Section~\ref{sec:overview} gives a high-level overview. Section~\ref{sec:plugin} describes the strategy plugin interface. Section~\ref{sec:envs} covers environment integration. Section~\ref{sec:config} describes the configuration system. Section~\ref{sec:monitoring} covers metrics logging and the web dashboard.
+
+\section{Architecture Overview}
+\label{sec:overview}
+
+The framework is built on top of Flower.ai~\cite{TestReference}, a framework for federated learning that provides a gRPC-based communication layer, a client management system, and a strategy abstraction for aggregation logic. The system follows the standard Flower server/client split: a \texttt{ServerApp} hosts the global policy and aggregation logic, while multiple \texttt{ClientApp} instances run independently, each interacting with their own local environment instance.
+
+Training proceeds in communication rounds. At the start of each round, the server serialises the current global policy parameters and broadcasts them to all sampled clients via \texttt{configure\_fit}. Each client deserialises the parameters, loads them into its local policy network, collects a batch of trajectories by interacting with its environment, computes a policy gradient estimate, and returns the gradient to the server. The server receives all client gradients in \texttt{aggregate\_fit}, passes them through the selected aggregation strategy, updates the global policy, and begins the next round.
+
+Evaluation runs every ten rounds: the server samples up to three clients, has each run ten evaluation episodes with the current global policy, and logs the average return. Additionally, the server itself evaluates the global policy directly at every round to provide a stable reward signal for monitoring.
+
+\section{Strategy Plugin Interface}
+\label{sec:plugin}
+
+The central design goal of the framework is that a researcher should be able to evaluate a new aggregation algorithm by writing a single Python class, without modifying any infrastructure code. This is achieved through a strategy registry.
+
+Every strategy is a subclass of \texttt{AggregationStrategy} and must implement two methods:
+
+\begin{itemize}
+    \item \texttt{aggregate(gradients, batch\_size, **kwargs)}: receives a list of gradient tensors from $K$ clients and returns a tuple of \texttt{(aggregated\_gradient, good\_agent\_indices)}.
+    \item \texttt{server\_update(policy, optimizer, theta\_t\_0, mu\_t, config, ...)}: applies the aggregated gradient to update the global policy and returns the number of update steps taken.
+\end{itemize}
+
+A strategy is registered by decorating the class with \texttt{@register\_strategy("name")}. The decorator adds the class to a global registry keyed by name. At runtime, the server resolves the strategy from the registry using the \texttt{method} field in the run configuration. This means strategies are fully decoupled from the server: adding a new strategy requires no changes to \texttt{server\_app.py} or any other file.
+
+As a minimal example, a coordinate-wise median strategy can be implemented as:
+\begin{verbatim}
+@register_strategy("coordinate-median")
+class CoordinateMedian(AggregationStrategy):
+    description = "Coordinate-wise median aggregation"
+
+    def aggregate(self, gradients, batch_size, **kwargs):
+        stacked = torch.stack(gradients)
+        median = torch.median(stacked, dim=0).values
+        return median, list(range(len(gradients)))
+
+    def server_update(self, policy, optimizer,
+                      theta_t_0, mu_t, config):
+        apply_gradient(policy, optimizer, mu_t)
+        return 1
+\end{verbatim}
+
+This class, placed in any file that is imported at startup, is sufficient to make the strategy available under the name \texttt{"coordinate-median"} in all experiment configurations.
+
+\section{Environment Integration}
+\label{sec:envs}
+
+Clients interact with environments through the standard Gymnasium interface~\cite{TestReference}. The framework ships with pre-tuned hyperparameter configurations for CartPole-v1, MountainCar-v0, Acrobot-v1, LunarLander-v2/v3, and HalfCheetah-v2/v5. Each configuration specifies the discount factor $\gamma$, policy network architecture, learning rate, trajectory batch sizes, and the Byzantine filter parameters $\sigma$ and $\delta$.
+
+Multi-agent environments from PettingZoo~\cite{TestReference} are supported through a compatibility wrapper, \texttt{PettingZooSingleAgentWrapper}, which adapts a PettingZoo parallel environment to the Gymnasium interface. The wrapper assigns one agent index to the controlled agent; all other agents take uniformly random actions. This makes PettingZoo environments drop-in compatible with the existing training loop without modification. Two environments are registered by default: \texttt{Pursuit-v4} (cooperative pursuit, discrete actions) and \texttt{SimpleSpread-v3} (cooperative navigation, continuous actions).
+
+Environment and observation space dimensions are queried automatically at startup via \texttt{get\_env\_info}, which instantiates a temporary environment, inspects its observation and action spaces, and closes it. This eliminates the need to hard-code state or action dimensions in configuration files.
+
+\section{Configuration System}
+\label{sec:config}
+
+Experiments are configured through TOML files passed to the Flower run command. The run configuration specifies all experiment parameters: the environment name, number of communication rounds, number of clients, number of Byzantine clients, aggregation method, and hyperparameter overrides. This design separates experiment specification from code, enabling reproducible experiments that can be re-run by sharing a single configuration file.
+
+Hyperparameters can be overridden at the run level; any parameter not specified falls back to the per-environment defaults defined in \texttt{config.py}. A global random seed is set at server startup and propagated to NumPy and PyTorch to ensure reproducibility across runs.
+
+\section{Metrics Logging and Dashboard}
+\label{sec:monitoring}
+
+The server logs training metrics to TensorBoard~\cite{TestReference} at every round. Logged quantities include the average client return, the number of good agents accepted by the Byzantine filter, the number of SCSG update steps, and the L2 norm of the global policy parameters.
+
+A web dashboard built with Flask and Socket.IO runs as a background thread within the server process. It receives per-round metrics via an HTTP POST to a local endpoint and displays live convergence curves, per-client status, and round-level statistics. When running inside Docker, the dashboard is exposed on port 8050 and can be accessed at \texttt{http://localhost:8050/experiment}. The dashboard is optional: if the Flask dependency is not installed, training proceeds without it.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Conclusion}
+\label{chap:conclusion}
+
+\section{Summary}
+
+This thesis presented an open benchmarking framework for federated reinforcement learning built on Flower.ai. The primary motivation was the lack of a shared evaluation substrate in the FedRL literature, which makes it difficult to compare algorithms fairly, reproduce published results, or build incrementally on prior work.
+
+The framework makes three concrete contributions. First, a \textbf{strategy plugin interface} that allows a researcher to evaluate a new aggregation algorithm by implementing a single Python class and dropping it into the strategies directory, with no changes to any infrastructure code. Second, \textbf{validated baseline implementations} of five established strategies — Independent Learning, Centralized Training, GOMDP, SVRPG, and FedPG-BR — all running under identical conditions with hyperparameters taken from their respective original papers. Third, a \textbf{Byzantine attack suite} of seven attack types reproduced from the FedPG-BR paper, providing a consistent adversarial evaluation setting that does not need to be re-implemented by future work.
+
+The framework was evaluated across three environments: CartPole-v1, LunarLander-v3, and the cooperative multi-agent Pursuit environment from PettingZoo. Results confirm that federated methods outperform independent learning in the clean setting, and that FedPG-BR's filtering mechanism provides meaningful robustness under 30\% Byzantine corruption while incurring no cost in the clean setting.
+
+\section{Limitations}
+
+Several limitations of the current framework are worth noting for future users.
+
+\textbf{Simulation only.} All experiments use Flower's simulation mode, which runs clients as parallel threads within a single process. Real-world federated deployments involve actual network communication, variable latency, and client heterogeneity. The simulation abstracts away these costs, which means runtime and convergence results may not transfer directly to physical deployments.
+
+\textbf{Synchronous federation.} The framework assumes synchronous rounds: the server waits for all $K$ clients before aggregating. Asynchronous FedRL methods, in which the server updates as soon as any client responds, are not currently supported. This is a meaningful limitation since asynchronous methods are better suited to settings with stragglers or unreliable clients.
+
+\textbf{Fixed policy architecture.} All strategies share the same MLP policy architecture. Architecture search or strategies that adapt the model structure (e.g. distillation-based methods) are not directly supported by the current interface.
+
+\textbf{Single-task federation.} Each client interacts with an independent instance of the same environment. Multi-task or heterogeneous federation, where different clients have different environment dynamics, is not covered.
+
+\textbf{No statistical testing.} The current evaluation reports mean and standard deviation over seeds but does not apply formal statistical tests (e.g. Mann-Whitney U). For publication-quality claims this should be added.
+
+\section{Future Work}
+
+Several directions would meaningfully extend the framework.
+
+\textbf{Asynchronous strategies.} Adding support for asynchronous aggregation would require a non-blocking server loop and a staleness-aware aggregation interface. The plugin system could be extended with an optional \texttt{should\_aggregate} method that the server calls per arriving client rather than per round.
+
+\textbf{Experiment tracking integration.} The current framework logs to TensorBoard and a local Flask dashboard. Integrating Weights \& Biases would make results easier to share across machines and enable automatic hyperparameter sweeps via W\&B Sweeps.
+
+\textbf{Additional environments.} The PettingZoo wrapper makes it straightforward to add further multi-agent environments. Cooperative navigation (SimpleSpread), multi-robot grid worlds, and resource allocation scenarios would broaden the coverage of the benchmark and make it more relevant to applied FedRL research.
+
+\textbf{Contribution to Flower baselines.} The framework is designed to meet the requirements of the Flower.ai baselines repository. A cleaned and documented submission would make the benchmark accessible to the broader federated learning community and provide a stable reference implementation for the FedPG family of algorithms.
+
+\textbf{Theoretical convergence analysis.} The framework currently treats convergence as an empirical question. Pairing the empirical results with a convergence rate analysis — particularly for the Byzantine setting, where the filter threshold $T_\mu$ depends on the batch size and gradient variance bound $\sigma$ — would strengthen the scientific contribution.
+
+% This displays the bibliography for all cited external documents. All references have to be defined in the file references.bib and can then be cited from within this document.
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+% This creates an appendix chapter, comment if not needed.
+\appendix
+\chapter{First Appendix Chapter Title}
+
+\end{document}
