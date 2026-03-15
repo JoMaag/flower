@@ -31,7 +31,7 @@ class MlpPolicy(nn.Module):
             p.data.uniform_(-1/math.sqrt(p.size(-1)), 1/math.sqrt(p.size(-1)))
     
     def forward(self, obs: torch.Tensor, sample: bool = True, fixed_action: Optional[int] = None):
-        logits = self.network(obs.view(-1))
+        logits = self.network(obs.reshape(-1))
         dist = Categorical(logits=logits)
         if fixed_action is not None:
             action = torch.tensor(fixed_action, device=obs.device)
@@ -64,7 +64,7 @@ class DiagonalGaussianMlpPolicy(nn.Module):
             p.data.uniform_(-1/math.sqrt(p.size(-1)), 1/math.sqrt(p.size(-1)))
     
     def forward(self, obs: torch.Tensor, sample: bool = True, fixed_action: Optional[np.ndarray] = None):
-        features = self.features(obs)
+        features = self.features(obs.reshape(-1))
         mu = torch.tanh(self.mu_head(features))
         log_sigma = torch.clamp(self.log_sigma_head(features), -20, -2)
         sigma = torch.tanh(log_sigma.exp())

@@ -29,6 +29,9 @@ COPY . .
 # Install the real package — no deps to download, they're all cached above
 RUN pip install --no-cache-dir --disable-pip-version-check --no-deps .
 
+# Remove any Flower state baked in during install (prevents alembic conflicts)
+RUN rm -rf /root/.flwr
+
 # Expose ports
 # 8080 - Flower server
 # 8050 - Web dashboard

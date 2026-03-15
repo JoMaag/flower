@@ -4,6 +4,7 @@ warnings.filterwarnings('ignore', category=UserWarning, module='pygame.pkgdata')
 
 from dataclasses import dataclass
 from typing import Tuple
+import numpy as np
 import gymnasium as gym
 
 # Attack types from paper (Section 5) + additional attacks
@@ -78,6 +79,20 @@ _CONFIGS = {
 }
 
 
+_CONFIGS.update({
+    "SimpleSpread-v3": Config(
+        env_name="SimpleSpread-v3", max_episode_len=100, gamma=0.99,
+        hidden_units=(64, 64), activation="Tanh", batch_size=32,
+        batch_size_min=28, batch_size_max=36, mini_batch_size=8, sigma=0.05
+    ),
+    "Pursuit-v4": Config(
+        env_name="Pursuit-v4", max_episode_len=500, gamma=0.99,
+        hidden_units=(64, 64), activation="Tanh", batch_size=32,
+        batch_size_min=28, batch_size_max=36, mini_batch_size=8, sigma=0.05
+    ),
+})
+
+
 def get_config(env_name: str) -> Config:
     return _CONFIGS.get(env_name, Config(env_name=env_name))
 
@@ -85,7 +100,7 @@ def get_config(env_name: str) -> Config:
 def get_env_info(env_name: str) -> dict:
     env = gym.make(env_name)
     assert env.observation_space.shape is not None
-    state_dim = int(env.observation_space.shape[0])
+    state_dim = int(np.prod(env.observation_space.shape))  # handles flat (4,) and grid (7,7,3) obs
     if isinstance(env.action_space, gym.spaces.Discrete):
         action_dim = int(env.action_space.n)
     else:

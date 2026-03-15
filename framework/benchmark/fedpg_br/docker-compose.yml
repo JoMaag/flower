@@ -10,14 +10,17 @@ services:
   # Use the dashboard to configure and launch training runs.
   dashboard:
     build: .
+    image: frl-benchmark:latest
     container_name: frl-benchmark
     command: frl-dashboard
     ports:
       - "8050:8050"
+      - "6006:6006"
     networks:
       - frl-benchmark-network
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - frl-runs:/app/runs
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
@@ -27,3 +30,6 @@ services:
 networks:
   frl-benchmark-network:
     driver: bridge
+
+volumes:
+  frl-runs:

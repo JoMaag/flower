@@ -125,6 +125,7 @@ def _docker_restart_training(
     max_episode_len=None,
     hidden_units=None,
     activation=None,
+    _seed=42,
 ) -> bool:
     """Stop the training container and restart flower-simulation with new config."""
     global training_metrics, current_round
@@ -138,66 +139,84 @@ def _docker_restart_training(
             return False
         project = os.environ.get("COMPOSE_PROJECT_NAME", "frl_benchmark")
 
-        # 1. Stop existing training container
+        # 1. Stop existing training container (if any)
+        import time as _time
         try:
             old = client.containers.get("frl-benchmark-server")
             socketio.emit("log", {"message": "Stopping existing training..."})
             old.stop(timeout=10)
             old.remove(force=True)
-        except Exception:
-            pass
+            # Wait for Docker to finish the removal before creating a new container
+            # with the same name (avoids 409 Conflict race condition)
+            for _ in range(40):
+                try:
+                    client.containers.get("frl-benchmark-server")
+                    _time.sleep(0.1)
+                except docker.errors.NotFound:
+                    break
+        except docker.errors.NotFound:
+            pass  # No previous container — nothing to stop
 
         # 2. Clear metrics for fresh experiment
         training_metrics.clear()
         current_round = 0
 
-        # 3. Get image + network from our own container (same image)
+        # 3. Get image + network + runs volume from our own container (same image)
         my_container = client.containers.get(_socket.gethostname())
         image_id = my_container.attrs["Image"]
         network_name = next(iter(my_container.attrs["NetworkSettings"]["Networks"]))
         network_obj = client.networks.get(network_name)
 
-        # 4. Build run_config — string values must be single-quoted (TOML format)
-        use_frl_benchmark = "true" if method == "fedpg-br" else "false"
-        attack_cfg = attack_type if attack_type and attack_type != "none" else "random-noise"
-        run_config = (
-            f"env='{env_name}' method='{method}' use-fedpg-br={use_frl_benchmark} "
-            f"num-server-rounds={num_rounds} num-workers={num_workers} "
-            f"num-byzantine={num_byzantine} attack-type='{attack_cfg}'"
+        # Find the frl-runs volume mounted in this container so training can share it
+        runs_volume = next(
+            (m["Name"] for m in my_container.attrs.get("Mounts", [])
+             if m.get("Destination") == "/app/runs" and m.get("Type") == "volume"),
+            None,
         )
+
+        # 4. Build env vars for run_training.py (bypasses flwr run / SuperLink / SQLite)
+        attack_cfg = attack_type if attack_type and attack_type != "none" else "random-noise"
+        train_env = {
+            "PYTHONUNBUFFERED": "1",
+            "DASHBOARD_URL": "http://dashboard:8050",
+            "FRL_ENV": env_name,
+            "FRL_METHOD": method,
+            "FRL_WORKERS": str(num_workers),
+            "FRL_BYZANTINE": str(num_byzantine),
+            "FRL_ROUNDS": str(num_rounds),
+            "FRL_ATTACK": attack_cfg,
+            "FRL_SEED": str(_seed),
+        }
         if batch_size:
-            run_config += f" batch-size={int(batch_size)}"
+            train_env["FRL_BATCH_SIZE"] = str(int(batch_size))
         if learning_rate:
-            run_config += f" lr={float(learning_rate)}"
+            train_env["FRL_LR"] = str(float(learning_rate))
         if sigma:
-            run_config += f" sigma={float(sigma)}"
+            train_env["FRL_SIGMA"] = str(float(sigma))
         if gamma:
-            run_config += f" gamma={float(gamma)}"
+            train_env["FRL_GAMMA"] = str(float(gamma))
         if mini_batch_size:
-            run_config += f" mini-batch-size={int(mini_batch_size)}"
+            train_env["FRL_MINI_BATCH_SIZE"] = str(int(mini_batch_size))
         if delta:
-            run_config += f" delta={float(delta)}"
+            train_env["FRL_DELTA"] = str(float(delta))
         if max_episode_len:
-            run_config += f" max-episode-len={int(max_episode_len)}"
-        if hidden_units:
-            run_config += f" hidden-units='{hidden_units}'"
-        if activation:
-            run_config += f" activation='{activation}'"
+            train_env["FRL_MAX_EPISODE_LEN"] = str(int(max_episode_len))
 
         socketio.emit("log", {"message": (
             f"Starting: env={env_name}, method={method}, "
             f"rounds={num_rounds}, workers={num_workers}, byzantine={num_byzantine}"
         )})
+        volumes = {}
+        if runs_volume:
+            volumes[runs_volume] = {"bind": "/app/runs", "mode": "rw"}
+
         container = client.containers.create(
             image=image_id,
-            command=["flower-simulation", "--app", "/app",
-                     "--num-supernodes", str(num_workers),
-                     "--run-config", run_config],
-            environment={
-                "PYTHONUNBUFFERED": "1",
-                "DASHBOARD_URL": "http://dashboard:8050",
-            },
+            command=["python", "/app/frl_benchmark/run_training.py"],
+            environment=train_env,
             name="frl-benchmark-server",
+            shm_size="2g",
+            volumes=volumes,
             labels={
                 "com.docker.compose.project": project,
                 "com.docker.compose.service": "server",
@@ -206,6 +225,64 @@ def _docker_restart_training(
         network_obj.connect(container)
         container.start()
         socketio.emit("log", {"message": f"Training started with {num_workers} simulated workers."})
+
+        # Stream training container logs back to the browser
+        def _stream_docker_logs():
+            round_loss_re = re.compile(r"\bround (\d+): (-?[\d.]+)$")
+            round_detail_re = re.compile(
+                r"Round (\d+)(?: \[(\w[\w-]*)\])?: good_agents=(\d+), scsg_steps=(\d+), active=(\d+), skipped=(\d+)"
+            )
+            last_good_agents = 0
+            last_scsg_steps = 0
+            last_reward = 0.0
+            in_history = False
+            try:
+                for raw in container.logs(stream=True, follow=True):
+                    line = raw.decode("utf-8", errors="replace").rstrip()
+                    if not line:
+                        continue
+                    clean = re.sub(r'\x1b\[[0-9;]*m', '', line)
+
+                    # Suppress Flower's end-of-training history dump
+                    if "History (" in clean:
+                        in_history = True
+                    if in_history:
+                        continue
+
+                    m = round_detail_re.search(clean)
+                    if m:
+                        last_good_agents = int(m.group(3))
+                        last_scsg_steps = int(m.group(4))
+                        socketio.emit("log", {"message": clean})
+                        continue
+
+                    m = round_loss_re.search(clean)
+                    if m:
+                        round_num = int(m.group(1))
+                        reward = -float(m.group(2))  # Flower logs loss = -reward
+                        last_reward = reward
+                        display = re.sub(r"\bround \d+: -?[\d.]+$",
+                                         f"round {round_num}: {reward:.1f}", clean)
+                        socketio.emit("log", {"message": display})
+                        continue
+            except Exception as log_err:
+                socketio.emit("log", {"message": f"[log stream ended: {log_err}]"})
+
+            # Container finished
+            try:
+                result = container.wait()
+                exit_code = result.get("StatusCode", -1)
+            except Exception:
+                exit_code = -1
+            socketio.emit("experiment_done", {
+                "method": method,
+                "exit_code": exit_code,
+                "final_reward": last_reward,
+            })
+            socketio.emit("log", {"message": f"Experiment finished (exit code {exit_code})"})
+
+        import threading as _threading
+        _threading.Thread(target=_stream_docker_logs, daemon=True).start()
         return True
 
     except ImportError:
@@ -240,6 +317,7 @@ def handle_start_experiment(data):
     hidden_units = data.get("hidden_units")
     activation = data.get("activation")
     round_timeout = int(data.get("round_timeout", 600))
+    seed = int(data.get("seed", 42))
 
     # ── Docker-compose mode ──────────────────────────────────────────────────
     # Stop existing server/workers and restart with the dashboard's parameters.
@@ -252,6 +330,7 @@ def handle_start_experiment(data):
             mini_batch_size=mini_batch_size, delta=delta,
             max_episode_len=max_episode_len, hidden_units=hidden_units,
             activation=activation,
+            _seed=seed,
         )
         return
     # ─────────────────────────────────────────────────────────────────────────
@@ -259,11 +338,12 @@ def handle_start_experiment(data):
     use_frl_benchmark = "true" if method == "fedpg-br" else "false"
     attack_cfg = attack_type if attack_type != "none" else "random-noise"
 
+    # Flower 1.27+ format: strings use double quotes, bools/ints bare
     run_config = (
-        f"env='{env_name}' method='{method}' "
+        f'env="{env_name}" method="{method}" '
         f"num-server-rounds={num_rounds} num-workers={num_workers} "
-        f"num-byzantine={num_byzantine} use-fedpg-br={use_frl_benchmark} "
-        f"attack-type='{attack_cfg}'"
+        f'num-byzantine={num_byzantine} use-fedpg-br={use_frl_benchmark} '
+        f'attack-type="{attack_cfg}"'
     )
     if batch_size:
         run_config += f" batch-size={int(batch_size)}"
@@ -280,9 +360,9 @@ def handle_start_experiment(data):
     if max_episode_len:
         run_config += f" max-episode-len={int(max_episode_len)}"
     if hidden_units:
-        run_config += f" hidden-units='{hidden_units}'"
+        run_config += f' hidden-units="{hidden_units}"'
     if activation:
-        run_config += f" activation='{activation}'"
+        run_config += f' activation="{activation}"'
     run_config += f" round-timeout={round_timeout}"
 
     # Find the project root (where pyproject.toml is)
@@ -292,10 +372,14 @@ def handle_start_experiment(data):
     # On conda/venv Windows: python.exe is in env root, scripts are in Scripts/
     python_dir = Path(sys.executable).parent
     candidates = [
-        python_dir / "Scripts" / "flower-simulation.exe",  # Windows conda/venv
+        python_dir / "Scripts" / "flwr-simulation.exe",    # Windows conda/venv (new)
+        python_dir / "Scripts" / "flwr-simulation",
+        python_dir / "Scripts" / "flower-simulation.exe",  # Windows conda/venv (old)
         python_dir / "Scripts" / "flower-simulation",
-        python_dir / "flower-simulation.exe",              # Some installations
-        python_dir / "flower-simulation",                  # Linux/macOS
+        python_dir / "flwr-simulation.exe",                # Some installations
+        python_dir / "flwr-simulation",                    # Linux/macOS (new)
+        python_dir / "flower-simulation.exe",
+        python_dir / "flower-simulation",                  # Linux/macOS (old)
     ]
     flower_sim = None
     for c in candidates:
@@ -305,18 +389,19 @@ def handle_start_experiment(data):
 
     if not flower_sim:
         import shutil
-        flower_sim = shutil.which("flower-simulation")
+        flower_sim = shutil.which("flwr-simulation") or shutil.which("flower-simulation")
 
-    if flower_sim:
-        cmd = [
-            flower_sim,
-            "--app", str(project_root),
-            "--num-supernodes", str(num_workers),
-            "--run-config", run_config,
-        ]
+    # Use new `flwr run` API if old simulation binary not found
+    if not flower_sim:
+        import shutil
+        flwr_bin = shutil.which("flwr")
+        if flwr_bin:
+            cmd = [flwr_bin, "run", str(project_root), "-c", run_config]
+        else:
+            socketio.emit("log", {"message": f"ERROR: Cannot find flwr or flower-simulation. Python at: {sys.executable}"})
+            return
     else:
-        socketio.emit("log", {"message": f"ERROR: Cannot find flower-simulation. Python at: {sys.executable}"})
-        return
+        cmd = [flower_sim, "--app", str(project_root), "--run-config", run_config]
 
     print(f"[Dashboard] Launching: {cmd}")
     socketio.emit("log", {"message": f"CMD: {cmd[0]}"})
@@ -343,9 +428,7 @@ def handle_start_experiment(data):
             return
 
         # Regex patterns for parsing flower output
-        fit_progress_re = re.compile(
-            r"fit progress: \((\d+), (-?[\d.]+), \{'server_avg_reward': np\.float64\((-?[\d.]+)\)\}, ([\d.]+)\)"
-        )
+        round_loss_re = re.compile(r"\bround (\d+): (-?[\d.]+)$")
         round_detail_re = re.compile(
             r"Round (\d+)(?: \[(\w[\w-]*)\])?: good_agents=(\d+), scsg_steps=(\d+), active=(\d+), skipped=(\d+)"
         )
@@ -353,6 +436,7 @@ def handle_start_experiment(data):
         last_good_agents = 0
         last_scsg_steps = 0
         last_reward = 0.0
+        in_history = False
 
         for line in proc.stdout:
             line = line.rstrip()
@@ -362,26 +446,29 @@ def handle_start_experiment(data):
             # Strip ANSI color codes for parsing
             clean = re.sub(r'\x1b\[[0-9;]*m', '', line)
 
+            # Suppress Flower's end-of-training history dump
+            if "History (" in clean:
+                in_history = True
+            if in_history:
+                continue
+
             # Parse round detail line
             m = round_detail_re.search(clean)
             if m:
                 last_good_agents = int(m.group(3))
                 last_scsg_steps = int(m.group(4))
+                socketio.emit("log", {"message": clean})
                 continue
 
-            # Parse fit progress line
-            m = fit_progress_re.search(clean)
+            # Parse Flower 1.20 fit_progress: "round N: loss" (loss = -reward)
+            m = round_loss_re.search(clean)
             if m:
                 round_num = int(m.group(1))
-                reward = float(m.group(3))
-
+                reward = -float(m.group(2))
                 last_reward = reward
-                socketio.emit("metrics", {
-                    "round": round_num,
-                    "server_avg_reward": reward,
-                    "num_good_agents": last_good_agents,
-                    "scsg_steps": last_scsg_steps,
-                })
+                display = re.sub(r"\bround \d+: -?[\d.]+$",
+                                 f"round {round_num}: {reward:.1f}", clean)
+                socketio.emit("log", {"message": display})
                 continue
 
         # Process finished
@@ -401,8 +488,25 @@ def handle_start_experiment(data):
 @socketio.on("stop_experiment")
 def handle_stop_experiment():
     """Stop the running experiment."""
-    _kill_experiment()
-    socketio.emit("log", {"message": "Experiment stopped by user."})
+    if os.environ.get("RUNNING_IN_DOCKER"):
+        try:
+            import docker
+            client = docker.from_env()
+            try:
+                ctr = client.containers.get("frl-benchmark-server")
+                ctr.stop(timeout=5)
+                try:
+                    ctr.remove(force=True)
+                except docker.errors.APIError:
+                    pass  # Already being removed (409 conflict) — ignore
+                socketio.emit("log", {"message": "Experiment stopped by user."})
+            except docker.errors.NotFound:
+                socketio.emit("log", {"message": "No running experiment to stop."})
+        except Exception as e:
+            socketio.emit("log", {"message": f"Error stopping experiment: {e}"})
+    else:
+        _kill_experiment()
+        socketio.emit("log", {"message": "Experiment stopped by user."})
 
 
 def _kill_experiment():
@@ -464,6 +568,19 @@ def handle_metrics_update(data):
     socketio.emit("metrics", metric_entry)
 
 
+def _start_tensorboard():
+    """Launch TensorBoard on port 6006 watching the runs/ directory."""
+    import subprocess as _sp
+    runs_dir = "/app/runs" if os.environ.get("RUNNING_IN_DOCKER") else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "runs"))
+    os.makedirs(runs_dir, exist_ok=True)
+    print(f"[TensorBoard] logdir={runs_dir}", flush=True)
+    _sp.Popen(
+        ["tensorboard", "--logdir", runs_dir, "--host", "0.0.0.0", "--port", "6006"],
+        stdout=_sp.DEVNULL,
+        stderr=_sp.DEVNULL,
+    )
+
+
 def start_dashboard(host: str = "0.0.0.0", port: int = 8050):
     """Start the web dashboard server.
 
@@ -473,6 +590,8 @@ def start_dashboard(host: str = "0.0.0.0", port: int = 8050):
     """
     import webbrowser
     import threading
+
+    _start_tensorboard()
 
     url = f"http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}/experiment"
     print(f"\n Flower FRL Benchmark Dashboard starting at {url}")

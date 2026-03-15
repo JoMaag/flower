@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(docker run:*)",
+      "Bash(find c:/Users/joelm -maxdepth 4 -name *.tex)",
+      "Bash(find c:/Users/joelm -maxdepth 6 -name *.tex)",
+      "Bash(docker network:*)",
+      "Bash(findstr frl:*)",
+      "Bash(python -:*)"
     ]
   }
 }

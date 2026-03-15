@@ -145,6 +145,18 @@
 
         .btn-danger:hover { background: #b91c1c; }
 
+        .btn-tensorboard {
+            background: white;
+            color: #d97706;
+            border: 1px solid #d97706;
+            margin-top: 8px;
+            text-decoration: none;
+            display: block;
+            text-align: center;
+        }
+
+        .btn-tensorboard:hover { background: #fffbeb; }
+
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
@@ -278,9 +290,12 @@
 <body>
     <div class="topbar">
         <h1>Flower FRL Benchmark</h1>
-        <div class="status">
-            <span class="status-dot" id="status-dot"></span>
-            <span id="status-text">Idle</span>
+        <div style="display:flex;align-items:center;gap:16px;">
+            <a href="http://localhost:6006" target="_blank" class="btn btn-tensorboard" style="width:auto;padding:6px 14px;margin-top:0;">TensorBoard</a>
+            <div class="status">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">Idle</span>
+            </div>
         </div>
     </div>
 
@@ -306,6 +321,7 @@
                     <option value="fedpg-br">FedPG-BR (Byzantine + SCSG)</option>
                     <option value="svrpg">SVRPG (SCSG only)</option>
                     <option value="gomdp">GOMDP (Simple averaging)</option>
+                    <option value="centralized">Centralized (Oracle upper bound)</option>
                 </select>
             </div>
 
@@ -329,6 +345,12 @@
             <div class="form-group">
                 <label>Server Rounds</label>
                 <input type="number" id="num-rounds" value="312" min="10" max="5000">
+            </div>
+
+            <div class="form-group">
+                <label>Global Seed</label>
+                <input type="number" id="seed" value="42" min="0" max="999999">
+                <div class="hint">For reproducible runs across workers and server</div>
             </div>
 
             <div class="form-group">
@@ -414,6 +436,9 @@
             <button class="btn btn-danger" id="btn-stop" onclick="stopExperiment()" disabled>
                 Stop
             </button>
+            <a href="http://localhost:6006" target="_blank" class="btn btn-tensorboard">
+                Open TensorBoard
+            </a>
 
             <div class="divider"></div>
 
@@ -449,6 +474,24 @@
                 <div id="learning-chart" style="height: 350px;"></div>
             </div>
 
+            <!-- Per-client reward band -->
+            <div class="chart-card">
+                <h3>Per-Client Reward Band</h3>
+                <div id="client-rewards-chart" style="height: 250px;"></div>
+            </div>
+
+            <!-- Communication statistics -->
+            <div class="chart-card">
+                <h3>Communication Statistics (Active vs Skipped Workers)</h3>
+                <div id="comm-chart" style="height: 220px;"></div>
+            </div>
+
+            <!-- Aggregated parameter norm -->
+            <div class="chart-card">
+                <h3>Global Policy Parameter Norm (L2)</h3>
+                <div id="param-norm-chart" style="height: 220px;"></div>
+            </div>
+
             <!-- Workers visualization -->
             <div class="chart-card">
                 <h3>Workers</h3>
@@ -475,7 +518,12 @@
     <script>
         // State
         let isRunning = false;
-        let experimentData = { rounds: [], rewards: [] };
+        let experimentData = {
+            rounds: [], rewards: [],
+            crMean: [], crMin: [], crMax: [],
+            active: [], skipped: [],
+            paramNorm: []
+        };
         let comparisonData = {};
 
         // Socket connection
@@ -486,6 +534,7 @@
             'fedpg-br': { name: 'FedPG-BR', desc: 'Byzantine filtering + SCSG variance reduction. Full paper algorithm.', color: '#2563eb' },
             'svrpg': { name: 'SVRPG', desc: 'SCSG variance reduction only. No Byzantine protection.', color: '#d97706' },
             'gomdp': { name: 'GOMDP', desc: 'Simple gradient averaging. Baseline method.', color: '#16a34a' },
+            'centralized': { name: 'Centralized', desc: 'Oracle upper bound: all workers treated as one. No federation overhead.', color: '#475569' },
         };
 
         // Environment defaults
@@ -508,6 +557,71 @@
                 margin: { t: 10, r: 20, b: 40, l: 50 },
                 xaxis: { title: 'Round' },
                 yaxis: { title: 'Average Reward' },
+                plot_bgcolor: '#f8fafc',
+                paper_bgcolor: 'white',
+            }, { responsive: true });
+
+            // Per-client reward band: shaded area + mean line
+            Plotly.newPlot('client-rewards-chart', [
+                {
+                    x: [], y: [],
+                    type: 'scatter', mode: 'lines',
+                    name: 'Max', line: { color: 'rgba(37,99,235,0.2)', width: 0 },
+                    showlegend: false
+                },
+                {
+                    x: [], y: [],
+                    type: 'scatter', mode: 'lines',
+                    name: 'Min', fill: 'tonexty',
+                    fillcolor: 'rgba(37,99,235,0.15)',
+                    line: { color: 'rgba(37,99,235,0.2)', width: 0 },
+                    showlegend: false
+                },
+                {
+                    x: [], y: [],
+                    type: 'scatter', mode: 'lines',
+                    name: 'Mean Client Return',
+                    line: { color: '#2563eb', width: 2 }
+                }
+            ], {
+                margin: { t: 10, r: 20, b: 40, l: 50 },
+                xaxis: { title: 'Round' },
+                yaxis: { title: 'Client Return' },
+                plot_bgcolor: '#f8fafc',
+                paper_bgcolor: 'white',
+            }, { responsive: true });
+
+            // Communication stats: stacked bar
+            Plotly.newPlot('comm-chart', [
+                {
+                    x: [], y: [],
+                    type: 'bar', name: 'Active',
+                    marker: { color: '#16a34a' }
+                },
+                {
+                    x: [], y: [],
+                    type: 'bar', name: 'Skipped',
+                    marker: { color: '#94a3b8' }
+                }
+            ], {
+                barmode: 'stack',
+                margin: { t: 10, r: 20, b: 40, l: 50 },
+                xaxis: { title: 'Round' },
+                yaxis: { title: 'Workers' },
+                plot_bgcolor: '#f8fafc',
+                paper_bgcolor: 'white',
+            }, { responsive: true });
+
+            // Param norm line
+            Plotly.newPlot('param-norm-chart', [{
+                x: [], y: [],
+                type: 'scatter', mode: 'lines',
+                name: 'Param Norm',
+                line: { color: '#7c3aed', width: 2 }
+            }], {
+                margin: { t: 10, r: 20, b: 40, l: 50 },
+                xaxis: { title: 'Round' },
+                yaxis: { title: 'L2 Norm' },
                 plot_bgcolor: '#f8fafc',
                 paper_bgcolor: 'white',
             }, { responsive: true });
@@ -574,17 +688,23 @@
                 hidden_units: document.getElementById('hidden-units').value,
                 activation: document.getElementById('activation').value,
                 round_timeout: parseInt(document.getElementById('round-timeout').value),
+                seed: parseInt(document.getElementById('seed').value || '42'),
             };
 
             isRunning = true;
-            experimentData = { rounds: [], rewards: [] };
+            experimentData = {
+                rounds: [], rewards: [],
+                crMean: [], crMin: [], crMax: [],
+                active: [], skipped: [],
+                paramNorm: []
+            };
             document.getElementById('btn-start').disabled = true;
             document.getElementById('btn-stop').disabled = false;
             document.getElementById('status-dot').className = 'status-dot running';
             document.getElementById('status-text').textContent = `Running ${strategies[config.method].name} on ${config.env}`;
 
             updateWorkers(config.num_workers, config.num_byzantine);
-            addLog(`<span class="method">[${config.method.toUpperCase()}]</span> Starting experiment: ${config.env}, K=${config.num_workers}, B=${config.num_byzantine}, rounds=${config.num_rounds}`);
+            addLog(`<span class="method">[${config.method.toUpperCase()}]</span> Starting experiment: ${config.env}, K=${config.num_workers}, B=${config.num_byzantine}, rounds=${config.num_rounds}, seed=${config.seed}`);
 
             socket.emit('start_experiment', config);
         }
@@ -618,17 +738,56 @@
             experimentData.rounds.push(round);
             experimentData.rewards.push(reward);
 
+            // Per-client reward data
+            const crMeanVal = (data.client_reward_mean !== undefined) ? data.client_reward_mean : reward;
+            const crMinVal  = (data.client_reward_min  !== undefined) ? data.client_reward_min  : reward;
+            const crMaxVal  = (data.client_reward_max  !== undefined) ? data.client_reward_max  : reward;
+            experimentData.crMean.push(crMeanVal);
+            experimentData.crMin.push(crMinVal);
+            experimentData.crMax.push(crMaxVal);
+
+            // Communication stats
+            const activeVal  = (data.num_active_workers  !== undefined) ? data.num_active_workers  : goodAgents;
+            const skippedVal = (data.num_skipped_workers !== undefined) ? data.num_skipped_workers : 0;
+            experimentData.active.push(activeVal);
+            experimentData.skipped.push(skippedVal);
+
+            // Param norm
+            const normVal = (data.param_norm !== undefined) ? data.param_norm : null;
+            if (normVal !== null) experimentData.paramNorm.push(normVal);
+
             // Update stats
             document.getElementById('stat-round').textContent = round;
             document.getElementById('stat-reward').textContent = reward.toFixed(1);
             document.getElementById('stat-good').textContent = goodAgents;
             document.getElementById('stat-steps').textContent = scsgSteps;
 
-            // Update chart
+            // Update learning curve
             Plotly.update('learning-chart', {
                 x: [experimentData.rounds],
                 y: [experimentData.rewards]
             });
+
+            // Update per-client reward band (3 traces: max, min, mean)
+            Plotly.update('client-rewards-chart', {
+                x: [experimentData.rounds, experimentData.rounds, experimentData.rounds],
+                y: [experimentData.crMax, experimentData.crMin, experimentData.crMean]
+            }, {}, [0, 1, 2]);
+
+            // Update comm chart (2 traces: active, skipped)
+            Plotly.update('comm-chart', {
+                x: [experimentData.rounds, experimentData.rounds],
+                y: [experimentData.active, experimentData.skipped]
+            }, {}, [0, 1]);
+
+            // Update param norm chart
+            if (experimentData.paramNorm.length > 0) {
+                const normRounds = experimentData.rounds.slice(0, experimentData.paramNorm.length);
+                Plotly.update('param-norm-chart', {
+                    x: [normRounds],
+                    y: [experimentData.paramNorm]
+                });
+            }
 
             // Log
             addLog(`<span class="round-num">Round ${round}</span>: reward=<span class="reward">${reward.toFixed(1)}</span>, good_agents=${goodAgents}, scsg_steps=${scsgSteps}`);

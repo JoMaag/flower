@@ -1,0 +1,8 @@
+# Comparison: Independent Learning (no federation)
+# CartPole-v1, 10 workers but only worker-0 gradient used
+env = "CartPole-v1"
+num-server-rounds = 312
+num-workers = 10
+num-byzantine = 0
+method = "independent"
+use-adaptive-communication = false

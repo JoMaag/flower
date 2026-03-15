@@ -1,11 +1,13 @@
 """Flower ServerApp for Flower FRL Benchmark."""
 
 import os
+import time
 import numpy as np
 import torch
 import gymnasium as gym
 from typing import Dict, List, Optional, Tuple, Union
 from logging import INFO
+from torch.utils.tensorboard import SummaryWriter
 
 from flwr.common import (
     FitRes, Parameters, Scalar,
@@ -54,7 +56,7 @@ class FRLStrategy(Strategy):
 
     def __init__(self, env_name: str, num_agents: int, byzantine_ratio: float = 0.0,
                  use_adaptive_batch: bool = False, method: str = 'fedpg-br', config=None,
-                 num_rounds: int = 0):
+                 num_rounds: int = 0, seed: int = 42):
         super().__init__()
 
         self.config = config if config is not None else get_config(env_name)
@@ -77,11 +79,16 @@ class FRLStrategy(Strategy):
         )
 
         self.env = gym.make(env_name)
+        self.env.reset(seed=seed)
         self.theta_t_0: torch.Tensor = self.policy.get_flat_params().clone()
         self._current_batch_size = self.config.batch_size
         self._last_fit_stats: dict = {}
         self._num_rounds = num_rounds
         self._strategy = get_strategy(method)()
+
+        # TensorBoard: one run per experiment, tagged by method + env + timestamp
+        run_name = f"{method}__{env_name}__{time.strftime('%Y%m%d_%H%M%S')}"
+        self._tb = SummaryWriter(log_dir=os.path.join("runs", run_name))
 
         log(INFO, f"Method: {self.method.upper()}")
     
@@ -135,10 +142,13 @@ class FRLStrategy(Strategy):
             }
 
         gradients = []
+        client_returns = []
         for _, fit_res in active_results:
             grad_numpy = parameters_to_ndarrays(fit_res.parameters)
             grad_tensor = torch.cat([torch.from_numpy(g).flatten() for g in grad_numpy]).float()
             gradients.append(grad_tensor)
+            if "avg_return" in fit_res.metrics:
+                client_returns.append(float(fit_res.metrics["avg_return"]))
 
         mu_t, good_agents = self._strategy.aggregate(
             gradients, self._current_batch_size,
@@ -151,6 +161,23 @@ class FRLStrategy(Strategy):
 
         log(INFO, f"Round {server_round} [{self.method.upper()}]: good_agents={len(good_agents)}, "
                   f"scsg_steps={actual_steps}, active={len(active_results)}, skipped={skipped_count}")
+        self._tb.add_scalar("train/good_agents", len(good_agents), server_round)
+        self._tb.add_scalar("train/active_agents", len(active_results), server_round)
+        self._tb.add_scalar("train/scsg_steps", actual_steps, server_round)
+        self._tb.add_scalar("train/skipped_clients", skipped_count, server_round)
+
+        # Per-client return statistics
+        cr_mean = float(np.mean(client_returns)) if client_returns else 0.0
+        cr_min  = float(np.min(client_returns))  if client_returns else 0.0
+        cr_max  = float(np.max(client_returns))  if client_returns else 0.0
+        if client_returns:
+            self._tb.add_scalar("train/client_return_mean", cr_mean, server_round)
+            self._tb.add_scalar("train/client_return_min",  cr_min,  server_round)
+            self._tb.add_scalar("train/client_return_max",  cr_max,  server_round)
+
+        # Policy parameter L2 norm
+        param_norm = float(self.policy.get_flat_params().norm().item())
+        self._tb.add_scalar("train/param_norm", param_norm, server_round)
 
         metrics_out = {
             "round": server_round,
@@ -160,6 +187,10 @@ class FRLStrategy(Strategy):
             "skipped_clients": skipped_count,
             "active_clients": len(active_results),
             "avg_divergence": total_divergence / len(results) if results else 0.0,
+            "client_reward_mean": cr_mean,
+            "client_reward_min":  cr_min,
+            "client_reward_max":  cr_max,
+            "param_norm": param_norm,
         }
         # Cache stats — evaluate() will push everything together in one message
         self._last_fit_stats = metrics_out
@@ -192,6 +223,8 @@ class FRLStrategy(Strategy):
             "server_avg_reward": avg,
             "done": self._num_rounds > 0 and server_round >= self._num_rounds,
         })
+        self._tb.add_scalar("eval/server_avg_reward", avg, server_round)
+        self._tb.flush()
         return -avg, {"server_avg_reward": avg}
 
 
@@ -262,8 +295,16 @@ def server_fn(context: Context):
     round_timeout = _rt if _rt > 0 else None  # 0 = no timeout (Flower default)
     byzantine_ratio = num_byzantine / num_workers if num_workers > 0 else 0.0
 
-    # Auto-start dashboard
-    _start_dashboard_background()
+    # Global seed for reproducibility
+    seed = int(run_config.get("seed", 42))
+    import random
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    # Auto-start dashboard (skip if an external dashboard URL is configured)
+    if not os.environ.get("DASHBOARD_URL"):
+        _start_dashboard_background()
 
     log(INFO, f"Flower FRL Benchmark: env={env_name}, workers={num_workers}, byzantine={num_byzantine}, method={method}")
 
@@ -275,6 +316,7 @@ def server_fn(context: Context):
         method=method,
         config=cfg,
         num_rounds=num_rounds,
+        seed=seed,
     )
 
     config = ServerConfig(num_rounds=num_rounds, round_timeout=round_timeout)

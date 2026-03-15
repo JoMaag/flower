@@ -181,8 +181,10 @@ def client_fn(context: Context):
     is_byzantine = client_id < num_byzantine
 
     # Seed per-worker for reproducibility — each worker gets a unique deterministic seed
-    torch.manual_seed(client_id)
-    np.random.seed(client_id)
+    # derived from the global seed so different seeds produce genuinely different runs
+    seed = int(run_config.get("seed", 42))
+    torch.manual_seed(seed + client_id)
+    np.random.seed(seed + client_id)
 
     config = get_config(env_name)
 
