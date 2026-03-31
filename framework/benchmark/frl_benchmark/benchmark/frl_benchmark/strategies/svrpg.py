@@ -13,13 +13,7 @@ from frl_benchmark.strategies.base import AggregationStrategy, register_strategy
 
 @register_strategy("svrpg")
 class SVRPG(AggregationStrategy):
-    """Variance-reduced policy gradient using SCSG.
-
-    1. Average all worker gradients (no filtering)
-    2. Run multiple SCSG variance-reduction steps
-
-    No Byzantine filtering. Uses SCSG for lower variance.
-    """
+    """Average worker gradients, then run SCSG variance-reduction steps on the server."""
 
     description = "SCSG variance reduction, no Byzantine filtering"
 
@@ -46,7 +40,6 @@ class SVRPG(AggregationStrategy):
         action_dim = policy.sizes[-1]
 
         for n in range(N_t):
-            # SCSG step
             policy_n = create_policy(
                 state_dim, action_dim, env_name,
                 config.hidden_units, config.activation, config.output_activation

@@ -18,6 +18,8 @@ services:
       - "6006:6006"
     networks:
       - frl-benchmark-network
+    mem_limit: 12g
+    shm_size: 3g
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - frl-runs:/app/runs

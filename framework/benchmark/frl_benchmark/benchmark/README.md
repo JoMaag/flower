@@ -1,14 +1,10 @@
 # Flower FRL Benchmark
 
-> *"Those Chinese New Year celebration robots that dance in perfect sync — hundreds of them, each learning from its own sensors, sharing only what it discovered, none needing to hand its body over to a central controller."*
->
-> That is the mental model for this project.
+A benchmarking framework for federated reinforcement learning built on [Flower](https://flower.ai/), implementing the algorithms from Fan et al. (NeurIPS 2021). Designed to provide a shared, reproducible evaluation substrate for FedRL research.
 
-Each agent explores its own copy of the environment. After every round it shares **what it learned** (a gradient), not its raw experience. A coordinator aggregates those signals, updates the shared policy, and sends it back. Agents with corrupted or adversarial updates are detected and discarded by the Byzantine filter — the one damaged robot does not bring down the rest.
+Each agent explores its own copy of the environment. After every round it shares what it learned (a policy gradient), not its raw experience. A central server aggregates those gradients, updates the shared policy, and sends it back. Under Byzantine corruption, the FedPG-BR filter detects and discards adversarial updates before aggregation.
 
-The result is a policy that emerges from collective experience, more sample-efficient than any single agent, and robust to a fraction of bad actors.
-
-This is a [Flower](https://flower.ai/) federated reinforcement learning testbench, built around **FedPG-BR** (Fan et al., NeurIPS 2021). Extended with a plugin strategy system, a live web dashboard, and one-command Docker deployment.
+This is a bachelor's thesis project at ETH Zürich (Distributed Computing Group).
 
 ---
 
@@ -30,53 +26,63 @@ Round t:
                                           (filtered out)
 ```
 
-**Three aggregation methods** (all interchangeable, selectable at runtime):
-
-| Method | Filtering | Variance reduction | Use when |
-|--------|-----------|-------------------|----------|
-| **FedPG-BR** | Byzantine filter | SCSG (paper algorithm) | Untrusted agents present |
-| **SVRPG** | None | SCSG | All agents trusted, noisy gradients |
-| **GOMDP** | None | None | Baseline / ablation |
-
 ---
 
 ## Quick Start
 
-### Docker (recommended — no local dependencies)
+### Docker (recommended)
 
 ```bash
 git clone <this-repo>
 cd frl_benchmark
 
 docker compose up --build
-# → Dashboard at http://localhost:8050/experiment
+# Dashboard at http://localhost:8050/experiment
 ```
 
-The dashboard starts. Click **Start** to launch a training run with your chosen environment, strategy, number of workers, and Byzantine ratio.
+Launch a training run from the dashboard by selecting environment, strategy, number of workers, and Byzantine ratio.
 
 ### Local
 
 ```bash
 pip install -e ".[dashboard]"
 frl-dashboard
-# → http://localhost:8050/experiment
+# http://localhost:8050/experiment
+```
+
+### Command line
+
+```bash
+flwr run . local-simulation --run-config configs/paper_cartpole.toml
 ```
 
 ---
 
 ## Strategies
 
-Three strategies from the paper, selectable from the dashboard or config:
+Five strategies are implemented, covering the full range from non-federated baselines to Byzantine-robust federation:
+
+| Method      | Federated | Var. reduction | Byz. robust | Notes           |
+|-------------|-----------|----------------|-------------|-----------------|
+| Independent | No        | No             | No          | Lower bound     |
+| Centralized | No        | No             | No          | Upper bound     |
+| GOMDP       | Yes       | No             | No          | Vanilla baseline|
+| SVRPG       | Yes       | SCSG           | No          | Trusted agents  |
+| FedPG-BR    | Yes       | SCSG           | Yes         | Byzantine agents|
+
+Select a strategy via the `method` key in your config:
 
 ```toml
-method = "fedpg-br"   # Byzantine filtering + SCSG variance reduction
-method = "svrpg"      # SCSG only
-method = "gomdp"      # Simple averaging (baseline)
+method = "independent"
+method = "centralized"
+method = "gomdp"
+method = "svrpg"
+method = "fedpg-br"
 ```
 
-### Implement your own
+### Add your own strategy
 
-Drop a file into `frl_benchmark/strategies/` and it is automatically picked up:
+Drop a file into `frl_benchmark/strategies/` — it is picked up automatically at startup:
 
 ```python
 from frl_benchmark.strategies import AggregationStrategy, register_strategy
@@ -95,61 +101,75 @@ class CoordinateMedian(AggregationStrategy):
         return 1
 ```
 
-Select it with `method = "coordinate-median"` in your TOML or from the dashboard dropdown.
+Select it with `method = "coordinate-median"` in your TOML or from the dashboard dropdown. See `frl_benchmark/strategies/my_strategy.py` for an empty template and `example_strategy.py` for a worked trimmed-mean example.
 
 ---
 
 ## Configuration
 
-Experiments are configured via TOML files in `configs/`:
+Experiments are specified as TOML files passed to `flwr run`:
 
 ```toml
-env = "CartPole-v1"           # Gymnasium environment
+env = "CartPole-v1"           # Gymnasium or PettingZoo environment
 num-server-rounds = 312       # Training rounds
-num-workers = 10              # K agents (paper: K=10)
-num-byzantine = 3             # B Byzantine agents (must be < K/2 for guarantees)
+num-workers = 10              # K agents
+num-byzantine = 3             # Byzantine agents (must be < K/2 for FedPG-BR guarantees)
 method = "fedpg-br"           # Strategy
 attack-type = "sign-flip"     # Attack type for Byzantine agents
 ```
 
-### Included paper configs
+Any parameter not specified falls back to per-environment defaults in `config.py`.
 
-| Config | Environment | Rounds | Target reward | Notes |
-|--------|-------------|--------|---------------|-------|
-| `paper_cartpole.toml` | CartPole-v1 | 312 | ~500 | ~2.5 h on CPU |
-| `paper_lunarlander.toml` | LunarLander-v3 | 323 | ~200–250 | ~12 h |
-| `paper_halfcheetah.toml` | HalfCheetah-v5 | 208 | ~3 000+ | ~4 h, needs MuJoCo |
+### Pre-built configs
 
-Round counts follow the paper's trajectory budget:
-`rounds = max_trajectories / (K × batch_size + mini_batch_size) × (1 + world_size)`
+| Config                          | Environment     | Method      | Rounds              |
+|---------------------------------|-----------------|-------------|---------------------|
+| `paper_cartpole.toml`           | CartPole-v1     | FedPG-BR    | 312                 |
+| `paper_cartpole_svrpg.toml`     | CartPole-v1     | SVRPG       | 312                 |
+| `compare_independent.toml`      | CartPole-v1     | Independent | 312                 |
+| `compare_fedpg.toml`            | CartPole-v1     | GOMDP       | 312                 |
+| `compare_centralized.toml`      | CartPole-v1     | Centralized | 312                 |
+| `paper_lunarlander.toml`        | LunarLander-v3  | FedPG-BR    | 323                 |
+| `paper_lunarlander_gomdp.toml`  | LunarLander-v3  | GOMDP       | 323                 |
+| `pursuit_afedpg.toml`           | Pursuit-v4      | FedPG-BR    | 200                 |
+| `pursuit_fedpg.toml`            | Pursuit-v4      | GOMDP       | 200                 |
+| `byz_afedpg_30pct.toml`         | CartPole-v1     | FedPG-BR    | 350, 30% sign-flip  |
+| `byz_fedpg_30pct.toml`          | CartPole-v1     | GOMDP       | 350, 30% sign-flip  |
+| `byz_svrpg_30pct.toml`          | CartPole-v1     | SVRPG       | 350, 30% sign-flip  |
+| `pursuit_byz_afedpg_30pct.toml` | Pursuit-v4      | FedPG-BR    | 200, 30% sign-flip  |
+| `pursuit_byz_fedpg_30pct.toml`  | Pursuit-v4      | GOMDP       | 200, 30% sign-flip  |
 
 ---
 
 ## Byzantine Attacks
 
-Seven attack types for robustness evaluation:
+Seven attack types for robustness evaluation, reproduced from the FedPG-BR paper:
 
-| Attack | Key | What the agent sends |
-|--------|-----|----------------------|
-| Random Noise | `random-noise` | Gaussian random gradient |
-| Sign Flip | `sign-flip` | −2.5 × true gradient |
-| Random Action | `random-action` | Gradient from uniformly random policy |
-| FedPG Attack | `fedpg-attack` | Optimised to evade Byzantine filter |
-| Variance Attack | `variance-attack` | Exploits gradient variance estimates |
-| Zero Gradient | `zero-gradient` | All zeros (free-rider) |
-| Reward Flipping | `reward-flipping` | Negates rewards during rollout |
+| Key               | Name            | Description                                              |
+|-------------------|-----------------|----------------------------------------------------------|
+| `sign-flip`       | Sign Flip       | Sends -2.5 x true gradient                              |
+| `random-noise`    | Random Noise    | Sends a random gradient vector                           |
+| `random-action`   | Random Action   | Collects trajectories with a random policy               |
+| `fedpg-attack`    | FedPG Attack    | Coordinated attack designed to evade the Byzantine filter|
+| `variance-attack` | Variance Attack | Exploits gradient variance estimates                     |
+| `zero-gradient`   | Zero Gradient   | Sends all zeros (free-rider)                             |
+| `reward-flipping` | Reward Flipping | Negates rewards during rollout                           |
 
 ---
 
 ## Environments
 
-| Environment | Extra dependency | Action space |
-|-------------|-----------------|--------------|
-| CartPole-v1 | — | Discrete |
-| MountainCar-v0 | — | Discrete |
-| Acrobot-v1 | — | Discrete |
-| LunarLander-v3 | `pip install gymnasium[box2d]` | Discrete |
-| HalfCheetah-v5 | `pip install gymnasium[mujoco]` | Continuous |
+| Environment     | Type       | Action space | Extra dependency                    |
+|-----------------|------------|--------------|-------------------------------------|
+| CartPole-v1     | Gymnasium  | Discrete     |                                     |
+| MountainCar-v0  | Gymnasium  | Discrete     |                                     |
+| Acrobot-v1      | Gymnasium  | Discrete     |                                     |
+| LunarLander-v3  | Gymnasium  | Discrete     | `gymnasium[box2d]`                  |
+| HalfCheetah-v5  | Gymnasium  | Continuous   | `gymnasium[mujoco]` (not evaluated) |
+| Pursuit-v4      | PettingZoo | Discrete     | `pettingzoo[sisl]`                  |
+| SimpleSpread-v3 | PettingZoo | Discrete     | `pettingzoo[mpe]` (not evaluated)   |
+
+PettingZoo environments are wrapped via `PettingZooSingleAgentWrapper`, which adapts a parallel multi-agent environment to the standard Gymnasium interface. Each Flower client controls one agent; all others act randomly.
 
 ---
 
@@ -157,44 +177,27 @@ Seven attack types for robustness evaluation:
 
 ```
 frl_benchmark/
-  server_app.py          # Flower ServerApp — strategy dispatch, Byzantine filter
+  server_app.py          # Flower ServerApp — strategy dispatch, logging
   client_app.py          # Flower ClientApp — rollout, gradient computation
   policy.py              # MLP policies (discrete + continuous action spaces)
-  config.py              # Per-environment hyperparameters (paper Table 1)
+  config.py              # Per-environment hyperparameters (from FedPG-BR paper)
   strategies/            # Plugin aggregation strategies
     base.py              #   Abstract base + decorator registry
-    gomdp.py             #   Simple averaging (baseline)
-    svrpg.py             #   SCSG variance reduction
-    fedpg_br_strategy.py #   Full FedPG-BR (paper algorithm)
-    my_strategy.py       #   Empty template — start here for a custom strategy
+    gomdp.py             #   Simple averaging (GOMDP baseline)
+    svrpg.py             #   SCSG variance reduction (SVRPG)
+    fedpg_br_strategy.py #   Full FedPG-BR (Byzantine filter + SCSG)
+    my_strategy.py       #   Empty template for custom strategies
     example_strategy.py  #   Worked example: trimmed-mean aggregation
   core/
-    byzantine.py         # Byzantine filter (Algorithm 1.1)
+    byzantine.py         # Byzantine filter (FedPG-Aggregate)
     trajectory.py        # Episode sampling
     gradient.py          # Policy gradient + SCSG correction
+  envs/
+    pettingzoo_wrapper.py # PettingZoo to Gymnasium adapter
   flower/
-    worker.py            # Gym worker — env, policy, attack logic
-  dashboard/             # Flask + SocketIO web UI
-configs/                 # TOML experiment configs
-plot_results.py          # Paper-style plots — RBF smoothing + 90% CI
-```
-
----
-
-## Installation Details
-
-```bash
-# Core (training only)
-pip install -e .
-
-# With dashboard
-pip install -e ".[dashboard]"
-
-# MuJoCo environments
-pip install gymnasium[mujoco]
-
-# Box2D environments
-pip install gymnasium[box2d]
+    worker.py            # Environment worker — rollout + attack injection
+  dashboard/             # Flask + SocketIO live web UI
+configs/                 # TOML experiment configurations
 ```
 
 ---

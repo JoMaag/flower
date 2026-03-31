@@ -1,5 +1,5 @@
-# GOMDP on Pursuit-v4, clean setting (no Byzantine)
-env = "Pursuit-v4"
+# GOMDP on LunarLander-v3, clean setting (no Byzantine)
+env = "LunarLander-v3"
 num-server-rounds = 350
 num-workers = 10
 num-byzantine = 0

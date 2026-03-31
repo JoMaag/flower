@@ -1,5 +1,4 @@
-# Comparison: FedPG (GOMDP) — simple gradient averaging, no filtering
-# CartPole-v1, 10 workers, no Byzantine
+# GOMDP on CartPole-v1, clean setting (no Byzantine)
 env = "CartPole-v1"
 num-server-rounds = 312
 num-workers = 10

@@ -22,7 +22,8 @@ COPY pyproject.toml .
 RUN mkdir -p frl_benchmark && touch frl_benchmark/__init__.py
 # Install all dependencies (the stub package itself is thrown away after)
 RUN pip install --no-cache-dir --disable-pip-version-check ".[dashboard]" && \
-    pip uninstall -y flower-frl-benchmark
+    pip uninstall -y flower-frl-benchmark && \
+    pip install --no-cache-dir "urllib3>=1.26,<2" "charset-normalizer>=3.0,<4"
 
 # ── Layer 2: source code (fast copy, no downloads) ────────────────────────────
 COPY . .

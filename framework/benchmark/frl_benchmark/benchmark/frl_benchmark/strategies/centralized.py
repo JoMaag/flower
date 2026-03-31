@@ -1,11 +1,7 @@
-"""Centralized RL baseline.
+"""Centralized (non-federated) baseline.
 
-Simulates centralized (non-federated) training by using a single worker
-with a batch size equal to K × per-worker batch.  Functionally identical to
-GOMDP with num_workers=1; the experiment runner sets those parameters.
-
-In the paper this is the oracle upper bound: one agent collects all
-trajectories that the federated system would collect collectively.
+Runs a single worker with batch_size = K * per_worker_batch.
+Serves as the upper-bound reference: one agent with access to all trajectories.
 """
 
 from typing import List, Tuple

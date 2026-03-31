@@ -3,11 +3,15 @@
 Real-time visualization of federated learning with multiple clients.
 """
 
+import logging
 import os
 import re
 import subprocess
 import sys
 import threading
+import warnings
+warnings.filterwarnings("ignore")
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -50,7 +54,7 @@ def get_strategies():
     except ImportError:
         # Fallback if strategies module not loaded
         return jsonify({
-            "fedpg-br": "Byzantine filtering + SCSG variance reduction (paper's method)",
+            "fedpg-br": "Byzantine filtering + SCSG variance reduction",
             "svrpg": "SCSG variance reduction, no Byzantine filtering",
             "gomdp": "Simple averaging, single gradient step (baseline)",
         })
@@ -582,12 +586,7 @@ def _start_tensorboard():
 
 
 def start_dashboard(host: str = "0.0.0.0", port: int = 8050):
-    """Start the web dashboard server.
 
-    Args:
-        host: Host address to bind to
-        port: Port to listen on
-    """
     import webbrowser
     import threading
 

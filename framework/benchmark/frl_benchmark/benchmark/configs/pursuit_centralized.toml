@@ -1,11 +1,8 @@
-# Comparison: Centralized baseline — single agent, K×batch (oracle upper bound)
-# Pursuit-v4, 1 worker, batch_size = 10 × 16 = 160
+# Centralized training on Pursuit-v4 (upper bound baseline, 1 worker with full batch)
 env = "Pursuit-v4"
-num-server-rounds = 200
+num-server-rounds = 350
 num-workers = 1
 num-byzantine = 0
 method = "centralized"
 batch-size = 160
-batch-size-min = 160
-batch-size-max = 160
 use-adaptive-communication = false

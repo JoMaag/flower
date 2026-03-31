@@ -85,7 +85,7 @@ class PettingZooSingleAgentWrapper(gym.Env):
 def _register_pettingzoo_envs():
     """Register PettingZoo environments with gymnasium if pettingzoo is installed."""
     try:
-        from pettingzoo.mpe import simple_spread_v3
+        from mpe2 import simple_spread_v3
         from pettingzoo.sisl import pursuit_v4
 
         if "SimpleSpread-v3" not in gym.envs.registry:

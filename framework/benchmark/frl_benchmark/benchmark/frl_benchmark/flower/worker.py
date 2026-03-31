@@ -11,11 +11,7 @@ from frl_benchmark.core.attacks import apply_attack, AttackConfig
 
 
 class Worker:
-    """Federated RL Worker that samples trajectories and computes gradients.
-    
-    Implements the agent behavior from FedPG-BR paper, including
-    Byzantine attack simulation for testing fault tolerance.
-    """
+    """Samples trajectories and computes policy gradients. Byzantine workers corrupt their gradients before returning them."""
     
     def __init__(self, worker_id: int, env_name: str, hidden_units: Tuple[int, ...],
                  gamma: float, activation: str = "Tanh", output_activation: str = "Identity",
@@ -31,8 +27,17 @@ class Worker:
         self.device = device
         self.attack_config = attack_config or AttackConfig()
         
-        # Create environment — seed with worker_id for reproducibility
-        self.env = gym.make(env_name)
+        # seed with worker_id for reproducibility
+        if env_name == "Pursuit-v4":
+            from pettingzoo.sisl import pursuit_v4
+            from frl_benchmark.envs.pettingzoo_wrapper import PettingZooSingleAgentWrapper
+            self.env = PettingZooSingleAgentWrapper(lambda: pursuit_v4.parallel_env(max_cycles=500), agent_idx=worker_id)
+        elif env_name == "SimpleSpread-v3":
+            from pettingzoo.mpe import simple_spread_v3
+            from frl_benchmark.envs.pettingzoo_wrapper import PettingZooSingleAgentWrapper
+            self.env = PettingZooSingleAgentWrapper(lambda: simple_spread_v3.parallel_env(max_cycles=100, continuous_actions=False), agent_idx=worker_id)
+        else:
+            self.env = gym.make(env_name)
         self.env.reset(seed=worker_id)
         assert self.env.observation_space.shape is not None
         obs_dim = int(self.env.observation_space.shape[0])
@@ -57,7 +62,6 @@ class Worker:
         
         self.policy.to(device)
         
-        # Log Byzantine status
         if self.is_byzantine:
             print(f"Worker {worker_id}: Byzantine agent with attack '{attack_type}'")
     
@@ -88,15 +92,7 @@ class Worker:
         return rewards
     
     def compute_gradient(self, num_trajectories: int, sample: bool = True) -> Tuple[List[torch.Tensor], float, float, float]:
-        """Sample trajectories and compute policy gradient.
-        
-        Args:
-            num_trajectories: Number of trajectories (episodes) to sample
-            sample: Whether to sample stochastically from policy
-            
-        Returns:
-            Tuple of (gradients, loss, avg_return, avg_length)
-        """
+        """Collect num_trajectories episodes and return (gradients, loss, avg_return, avg_length)."""
         all_advantages = []
         all_log_probs = []
         all_returns = []
@@ -144,18 +140,14 @@ class Worker:
             all_returns.append(sum(episode_rewards))
             all_lengths.append(len(episode_rewards))
         
-        # Compute policy gradient loss
         advantages = torch.tensor(all_advantages, dtype=torch.float32).to(self.device)
         log_probs = torch.stack(all_log_probs)
         
-        # REINFORCE loss: -E[log π(a|s) * A(s,a)]
         loss = -(log_probs * advantages).mean()
         
-        # Backpropagate to compute gradients
         self.policy.zero_grad()
         loss.backward()
         
-        # Extract gradients
         gradients = [param.grad.clone() for param in self.policy.parameters() if param.grad is not None]
         
         # Apply gradient-based Byzantine attacks
@@ -172,15 +164,7 @@ class Worker:
         return gradients, float(loss.item()), float(np.mean(all_returns)), float(np.mean(all_lengths))
     
     def evaluate(self, num_episodes: int = 10, max_steps: int = 1000) -> Tuple[float, float]:
-        """Evaluate current policy without exploration.
-        
-        Args:
-            num_episodes: Number of evaluation episodes
-            max_steps: Maximum steps per episode
-            
-        Returns:
-            Tuple of (average_reward, average_length)
-        """
+        """Run num_episodes greedy episodes and return (avg_reward, avg_length)."""
         total_reward = 0.0
         total_length = 0
         

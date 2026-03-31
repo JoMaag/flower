@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for f:*)",
+      "Bash(do)",
+      "Bash(sed -i 's/num-server-rounds = [0-9]*/num-server-rounds = 350/' \"$f\")",
+      "Bash(done)"
+    ]
+  }
+}

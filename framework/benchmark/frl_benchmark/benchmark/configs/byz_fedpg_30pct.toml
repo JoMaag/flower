@@ -1,6 +1,6 @@
-# Byzantine robustness: FedPG under 30% Byzantine attack (sign-flip)
+# GOMDP on CartPole-v1, 30% sign-flip Byzantine workers
 env = "CartPole-v1"
-num-server-rounds = 312
+num-server-rounds = 350
 num-workers = 10
 num-byzantine = 3
 method = "gomdp"

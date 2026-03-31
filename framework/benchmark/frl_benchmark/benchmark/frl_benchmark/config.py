@@ -7,7 +7,7 @@ from typing import Tuple
 import numpy as np
 import gymnasium as gym
 
-# Attack types from paper (Section 5) + additional attacks
+# Supported attack types
 ATTACK_TYPES = [
     # Paper attacks (Section 5)
     "random-noise",      # RN: sends random vector
@@ -98,9 +98,18 @@ def get_config(env_name: str) -> Config:
 
 
 def get_env_info(env_name: str) -> dict:
-    env = gym.make(env_name)
+    if env_name == "Pursuit-v4":
+        from pettingzoo.sisl import pursuit_v4
+        from frl_benchmark.envs.pettingzoo_wrapper import PettingZooSingleAgentWrapper
+        env = PettingZooSingleAgentWrapper(lambda: pursuit_v4.parallel_env(max_cycles=500))
+    elif env_name == "SimpleSpread-v3":
+        from pettingzoo.mpe import simple_spread_v3
+        from frl_benchmark.envs.pettingzoo_wrapper import PettingZooSingleAgentWrapper
+        env = PettingZooSingleAgentWrapper(lambda: simple_spread_v3.parallel_env(max_cycles=100, continuous_actions=False))
+    else:
+        env = gym.make(env_name)
     assert env.observation_space.shape is not None
-    state_dim = int(np.prod(env.observation_space.shape))  # handles flat (4,) and grid (7,7,3) obs
+    state_dim = int(np.prod(env.observation_space.shape))
     if isinstance(env.action_space, gym.spaces.Discrete):
         action_dim = int(env.action_space.n)
     else:

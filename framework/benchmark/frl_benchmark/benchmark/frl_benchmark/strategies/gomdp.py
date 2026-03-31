@@ -1,8 +1,4 @@
-"""GOMDP: Simple federated policy gradient with averaging.
-
-No Byzantine filtering, no variance reduction.
-Baseline method from the paper.
-"""
+"""GOMDP: simple federated policy gradient — average gradients, single update step."""
 
 from typing import List, Tuple
 
@@ -13,14 +9,7 @@ from frl_benchmark.strategies.base import AggregationStrategy, register_strategy
 
 @register_strategy("gomdp")
 class GOMDP(AggregationStrategy):
-    """Simple gradient averaging with a single update step.
-
-    This is the simplest federated policy gradient method:
-    1. Average all worker gradients
-    2. Take one gradient step
-
-    No Byzantine filtering. No variance reduction.
-    """
+    """Average all worker gradients and take one gradient step."""
 
     description = "Simple averaging, single gradient step (baseline)"
 

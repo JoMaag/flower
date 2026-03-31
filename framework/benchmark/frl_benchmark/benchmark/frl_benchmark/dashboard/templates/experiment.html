@@ -330,7 +330,7 @@
 
             <div class="strategy-info" id="strategy-info">
                 <div class="name">FedPG-BR</div>
-                Byzantine filtering + SCSG variance reduction. Full paper algorithm.
+                Byzantine filtering + SCSG variance reduction.
             </div>
 
             <div class="form-group">
@@ -342,7 +342,7 @@
             <div class="form-group">
                 <label>Byzantine Agents (B)</label>
                 <input type="number" id="num-byzantine" value="0" min="0" max="20">
-                <div class="hint">Set 0 for baseline, 3 for paper's attack scenario</div>
+                <div class="hint">Set 0 for clean setting, 3 for 30% Byzantine ratio</div>
             </div>
 
             <div class="form-group">
@@ -534,7 +534,7 @@
 
         // Strategy descriptions
         const strategies = {
-            'fedpg-br': { name: 'FedPG-BR', desc: 'Byzantine filtering + SCSG variance reduction. Full paper algorithm.', color: '#2563eb' },
+            'fedpg-br': { name: 'FedPG-BR', desc: 'Byzantine filtering + SCSG variance reduction.', color: '#2563eb' },
             'svrpg': { name: 'SVRPG', desc: 'SCSG variance reduction only. No Byzantine protection.', color: '#d97706' },
             'gomdp': { name: 'GOMDP', desc: 'Simple gradient averaging. Baseline method.', color: '#16a34a' },
             'independent': { name: 'Independent RL', desc: 'No federation: each worker trains independently, only worker-0 gradient applied.', color: '#0891b2' },

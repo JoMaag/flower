@@ -1,7 +1,4 @@
-"""FedPG-BR: Byzantine-Robust Federated Policy Gradient.
-
-Full algorithm from the paper: Byzantine filtering + SCSG variance reduction.
-"""
+"""FedPG-BR: Byzantine filtering + SCSG variance reduction."""
 
 from typing import List, Tuple
 
@@ -13,15 +10,9 @@ from frl_benchmark.strategies.base import AggregationStrategy, register_strategy
 
 @register_strategy("fedpg-br")
 class FedPGBR(AggregationStrategy):
-    """Full FedPG-BR algorithm.
+    """Byzantine filter (FedPG-Aggregate) followed by SCSG server updates (FedPG-Update)."""
 
-    1. Byzantine filtering to remove malicious gradients
-    2. SCSG variance-reduced server updates
-
-    This is the main contribution of the paper.
-    """
-
-    description = "Byzantine filtering + SCSG variance reduction (paper's method)"
+    description = "Byzantine filtering + SCSG variance reduction"
 
     def aggregate(self, gradients: List[torch.Tensor], batch_size: int, **kwargs) -> Tuple[torch.Tensor, List[int]]:
         byzantine_filter = kwargs.get("byzantine_filter")

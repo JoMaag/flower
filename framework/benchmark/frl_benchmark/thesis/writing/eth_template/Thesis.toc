@@ -1,7 +1,50 @@
 \contentsline {chapter}{Acknowledgements}{i}{chapter*.1}%
 \contentsline {chapter}{Abstract}{ii}{chapter*.2}%
-\contentsline {chapter}{\numberline {1}First Chapter Title}{1}{chapter.1}%
-\contentsline {section}{\numberline {1.1}First Section Title}{1}{section.1.1}%
-\contentsline {subsection}{\numberline {1.1.1}First Subsection Title}{1}{subsection.1.1.1}%
-\contentsline {chapter}{Bibliography}{3}{chapter*.5}%
-\contentsline {chapter}{\numberline {A}First Appendix Chapter Title}{A-1}{appendix.U}%
+\contentsline {chapter}{\numberline {1}Introduction}{1}{chapter.1}%
+\contentsline {section}{\numberline {1.1}Motivation}{1}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Contributions}{2}{section.1.2}%
+\contentsline {section}{\numberline {1.3}Thesis Outline}{2}{section.1.3}%
+\contentsline {chapter}{\numberline {2}Background}{4}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Reinforcement Learning}{4}{section.2.1}%
+\contentsline {subsection}{\numberline {2.1.1}Policy Gradient Methods}{4}{subsection.2.1.1}%
+\contentsline {subsection}{\numberline {2.1.2}Variance Reduction: SVRPG}{5}{subsection.2.1.2}%
+\contentsline {section}{\numberline {2.2}Federated Learning}{5}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Byzantine Robustness}{5}{section.2.3}%
+\contentsline {section}{\numberline {2.4}Related Work}{6}{section.2.4}%
+\contentsline {chapter}{\numberline {3}Baseline Implementations}{8}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Design Baselines}{8}{section.3.1}%
+\contentsline {section}{\numberline {3.2}GOMDP}{9}{section.3.2}%
+\contentsline {section}{\numberline {3.3}SVRPG}{9}{section.3.3}%
+\contentsline {section}{\numberline {3.4}FedPG-BR}{9}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}Byzantine Filtering (\textsc {FedPG-Aggregate})}{10}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}Server Update (\textsc {FedPG-Update})}{10}{subsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.4.3}Implementation Notes}{10}{subsection.3.4.3}%
+\contentsline {chapter}{\numberline {4}System Design}{11}{chapter.4}%
+\contentsline {section}{\numberline {4.1}Architecture Overview}{11}{section.4.1}%
+\contentsline {section}{\numberline {4.2}Strategy Plugin Interface}{12}{section.4.2}%
+\contentsline {section}{\numberline {4.3}Environment Integration}{13}{section.4.3}%
+\contentsline {section}{\numberline {4.4}Configuration System}{13}{section.4.4}%
+\contentsline {section}{\numberline {4.5}Metrics Logging and Dashboard}{13}{section.4.5}%
+\contentsline {chapter}{\numberline {5}Benchmarking Framework}{15}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Motivation: Why Not Just Run Your Own Agents?}{15}{section.5.1}%
+\contentsline {section}{\numberline {5.2}Strategy Plugin Interface}{16}{section.5.2}%
+\contentsline {section}{\numberline {5.3}Experiment Configuration}{17}{section.5.3}%
+\contentsline {section}{\numberline {5.4}Byzantine Attack Suite}{18}{section.5.4}%
+\contentsline {section}{\numberline {5.5}Reproducibility}{18}{section.5.5}%
+\contentsline {chapter}{\numberline {6}Experimental Evaluation}{19}{chapter.6}%
+\contentsline {section}{\numberline {6.1}Experimental Setup}{19}{section.6.1}%
+\contentsline {subsection}{\numberline {6.1.1}Environments}{19}{subsection.6.1.1}%
+\contentsline {subsection}{\numberline {6.1.2}Policy Network}{20}{subsection.6.1.2}%
+\contentsline {subsection}{\numberline {6.1.3}Hyperparameters}{20}{subsection.6.1.3}%
+\contentsline {subsection}{\numberline {6.1.4}Evaluation Protocol}{20}{subsection.6.1.4}%
+\contentsline {section}{\numberline {6.2}Hypotheses}{20}{section.6.2}%
+\contentsline {section}{\numberline {6.3}Results: Clean Setting}{21}{section.6.3}%
+\contentsline {section}{\numberline {6.4}Results: Byzantine Robustness}{22}{section.6.4}%
+\contentsline {section}{\numberline {6.5}Results: Multi-Agent Pursuit}{23}{section.6.5}%
+\contentsline {section}{\numberline {6.6}Discussion}{23}{section.6.6}%
+\contentsline {chapter}{\numberline {7}Conclusion}{24}{chapter.7}%
+\contentsline {section}{\numberline {7.1}Summary}{24}{section.7.1}%
+\contentsline {section}{\numberline {7.2}Limitations}{24}{section.7.2}%
+\contentsline {section}{\numberline {7.3}Future Work}{25}{section.7.3}%
+\contentsline {chapter}{Bibliography}{27}{chapter*.4}%
+\contentsline {chapter}{\numberline {A}Adding a Custom Strategy}{A-1}{appendix.U}%

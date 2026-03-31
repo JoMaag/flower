@@ -23,6 +23,7 @@ from frl_benchmark.config import get_config, get_env_info
 from frl_benchmark.policy import create_policy
 from frl_benchmark.core.byzantine import ByzantineFilter
 from frl_benchmark.core.trajectory import sample_trajectory
+from frl_benchmark.core.attacks import reset_attack_state
 import frl_benchmark.strategies  # triggers auto-discovery of all strategy files
 from frl_benchmark.strategies import get_strategy
 
@@ -78,7 +79,16 @@ class FRLStrategy(Strategy):
             self.config.sigma, self.config.delta, num_agents, byzantine_ratio
         )
 
-        self.env = gym.make(env_name)
+        if env_name == "Pursuit-v4":
+            from pettingzoo.sisl import pursuit_v4
+            from frl_benchmark.envs.pettingzoo_wrapper import PettingZooSingleAgentWrapper
+            self.env = PettingZooSingleAgentWrapper(lambda: pursuit_v4.parallel_env(max_cycles=500))
+        elif env_name == "SimpleSpread-v3":
+            from pettingzoo.mpe import simple_spread_v3
+            from frl_benchmark.envs.pettingzoo_wrapper import PettingZooSingleAgentWrapper
+            self.env = PettingZooSingleAgentWrapper(lambda: simple_spread_v3.parallel_env(max_cycles=100, continuous_actions=False))
+        else:
+            self.env = gym.make(env_name)
         self.env.reset(seed=seed)
         self.theta_t_0: torch.Tensor = self.policy.get_flat_params().clone()
         self._current_batch_size = self.config.batch_size
@@ -96,6 +106,7 @@ class FRLStrategy(Strategy):
         return ndarrays_to_parameters([p.cpu().detach().numpy() for p in self.policy.parameters()])
     
     def configure_fit(self, server_round: int, parameters: Parameters, client_manager):
+        reset_attack_state()
         self.theta_t_0 = self.policy.get_flat_params().clone()
         
         if self.use_adaptive_batch:

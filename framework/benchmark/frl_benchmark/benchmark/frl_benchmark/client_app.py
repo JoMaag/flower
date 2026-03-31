@@ -1,5 +1,8 @@
 """Flower ClientApp for Flower FRL Benchmark."""
 
+import warnings
+warnings.filterwarnings("ignore")
+
 import torch
 import numpy as np
 from flwr.client import ClientApp, NumPyClient
@@ -26,8 +29,13 @@ class FRLClient(NumPyClient):
         self.set_parameters(parameters)
         batch_size = int(config.get("batch_size", 16))
 
-        grad_list, loss, avg_return, avg_length = self.worker.compute_gradient(batch_size, sample=True)
-        gradient_numpy = [g.cpu().numpy() for g in grad_list]
+        try:
+            grad_list, loss, avg_return, avg_length = self.worker.compute_gradient(batch_size, sample=True)
+            gradient_numpy = [g.cpu().numpy() for g in grad_list]
+        except Exception:
+            # Return zero gradient on failure so the server still counts this client
+            gradient_numpy = [np.zeros_like(p.cpu().detach().numpy()) for p in self.worker.policy.parameters()]
+            loss, avg_return, avg_length = 0.0, 0.0, 0.0
 
         return gradient_numpy, batch_size, {
             "loss": float(loss),

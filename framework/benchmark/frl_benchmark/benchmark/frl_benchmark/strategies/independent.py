@@ -14,12 +14,7 @@ from frl_benchmark.strategies.base import AggregationStrategy, register_strategy
 
 @register_strategy("independent")
 class IndependentRL(AggregationStrategy):
-    """Non-federated baseline: single worker, no aggregation.
-
-    Uses only the first worker's gradient each round. Represents
-    independent learning where agents never share information.
-    Compare against FedPG-BR to show the benefit of federation.
-    """
+    """Use only worker 0's gradient each round — no information sharing between workers."""
 
     description = "Non-federated baseline: single agent, no gradient sharing"
 
