@@ -14,7 +14,7 @@ from frl_benchmark.strategies.base import AggregationStrategy, register_strategy
 
 @register_strategy("independent")
 class IndependentRL(AggregationStrategy):
-    """Use only worker 0's gradient each round — no information sharing between workers."""
+    """Use only worker 0's gradient each round â€” no information sharing between workers."""
 
     description = "Non-federated baseline: single agent, no gradient sharing"
 

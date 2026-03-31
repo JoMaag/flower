@@ -1,4 +1,4 @@
-"""GOMDP: simple federated policy gradient — average gradients, single update step."""
+"""GOMDP: simple federated policy gradient â€” average gradients, single update step."""
 
 from typing import List, Tuple
 
