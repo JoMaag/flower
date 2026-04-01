@@ -515,17 +515,17 @@ Table~\ref{tab:clean} reports the final average reward of each strategy after th
 
 \begin{table}[h]
 \centering
-\caption{Final average reward in the clean setting ($\alpha = 0$), single seed, smoothed EMA.}
+\caption{Final average reward in the clean setting ($\alpha = 0$), single seed, smoothed EMA. Dashes indicate runs not conducted.}
 \label{tab:clean}
 \begin{tabular}{lccc}
 \hline
 \textbf{Strategy} & \textbf{CartPole-v1} & \textbf{LunarLander-v3} & \textbf{Pursuit-v4} \\
 \hline
-Independent  & 91.6  & 50.2  & \TODO{} \\
-GOMDP        & 351.4 & 78.8  & \TODO{} \\
-SVRPG        & 428.5 & 80.9  & \TODO{} \\
-FedPG-BR     & 473.7 & 91.6  & \TODO{} \\
-Centralized  & 322.7 & 75.3  & \TODO{} \\
+Independent  & 91.6  & 50.2  & ---   \\
+GOMDP        & 351.4 & 78.8  & -46.2 \\
+SVRPG        & 428.5 & 80.9  & -46.0 \\
+FedPG-BR     & 473.7 & 91.6  & -46.0 \\
+Centralized  & 322.7 & 75.3  & ---   \\
 \hline
 \end{tabular}
 \end{table}
@@ -575,9 +575,18 @@ GOMDP and SVRPG, which use plain mean aggregation, are expected to degrade signi
 \section{Results: Multi-Agent Pursuit}
 \label{sec:exp:multiagent}
 
-\TODO{Add convergence curves and final reward table for Pursuit-v4.}
-
 The Pursuit environment tests the framework in a setting where the federation maps naturally to a multi-agent problem: each Flower client controls one pursuer, and the shared global policy represents a cooperative team policy. Unlike the single-agent environments, there is no well-defined centralised oracle here, since in a true deployment the agents cannot share raw observations.
+
+Three federated strategies were evaluated on Pursuit-v4 (GOMDP, SVRPG, FedPG-BR) for 350 rounds. Figure~\ref{fig:pursuit_clean} shows the convergence curves. All three methods converge to a similar final reward of approximately $-46$, with no clear separation between them. The negative reward reflects the per-step penalty structure of the Pursuit environment: an agent receives a small bonus per evader captured and a penalty per step, so a reward of $-46$ indicates limited cooperative capture behaviour within the training budget.
+
+The absence of a performance gap between methods on Pursuit contrasts with the clear ranking observed on CartPole and LunarLander. One likely explanation is that 350 rounds is insufficient for the shared policy to develop meaningful cooperative behaviour in this environment. The single-agent environments have well-shaped reward signals that guide early learning; Pursuit requires the pursuer team to coordinate, which takes longer to emerge from a random initialisation.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{figures/pettingzoo_clean.png}
+\caption{Convergence curves on Pursuit-v4, clean setting ($\alpha = 0$, 10 workers, 350 rounds). All three methods converge to similar performance around $-46$.}
+\label{fig:pursuit_clean}
+\end{figure}
 
 Byzantine robustness on Pursuit-v4 was not evaluated in this thesis due to time constraints. The clean-setting results are sufficient to validate multi-agent environment support; Byzantine evaluation on Pursuit is left as future work.
 
