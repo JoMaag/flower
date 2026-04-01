@@ -93,4 +93,9 @@ M.~Abadi, A.~Agarwal, P.~Barham, E.~Brevdo, Z.~Chen, C.~Citro, G.~S. Corrado,
   X.~Zheng, ``{TensorFlow}: Large-scale machine learning on heterogeneous
   systems,'' 2015, software available from tensorflow.org.
 
+\bibitem{FRLBenchmark}
+J.~Maag, ``{Flower FRL Benchmark}: A benchmarking framework for federated
+  reinforcement learning,'' 2025, available at
+  \url{https://github.com/JoMaag/frl-benchmark}.
+
 \end{thebibliography}

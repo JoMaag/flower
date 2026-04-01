@@ -729,6 +729,10 @@
         socket.on('connect', () => {
             addLog('Connected to server.');
             loadStrategies();
+            if (isRunning) {
+                document.getElementById('btn-start').disabled = true;
+                document.getElementById('btn-stop').disabled = false;
+            }
         });
 
         socket.on('log', (data) => {

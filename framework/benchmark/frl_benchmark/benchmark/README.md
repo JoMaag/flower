@@ -208,6 +208,6 @@ Fan, X., Ma, Y., Dai, Z., Jing, W., Tan, C., & Low, B.K.H. (2021).
 **Fault-Tolerant Federated Reinforcement Learning with Theoretical Guarantee.**
 *Advances in Neural Information Processing Systems (NeurIPS).*
 
-- [Paper](https://arxiv.org/abs/2110.11164)
+- [Paper](https://arxiv.org/abs/2110.14074)
 - [Original implementation](https://github.com/flint-xf-fan/Byzantine-Federated-RL)
 - [Flower framework](https://flower.ai/)
