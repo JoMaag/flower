@@ -29,7 +29,7 @@ def start_server(
         num_rounds: Number of training rounds
         num_clients: Expected number of clients
         env_name: Environment name
-        method: Aggregation method (fedpg-br, svrpg, gomdp)
+        method: Aggregation method (fedpg-br, svrpg, gpomdp)
         byzantine_ratio: Ratio of Byzantine clients
     """
     log(INFO, f"Starting Flower FRL Benchmark server on {server_address}")
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     parser.add_argument("--env", type=str, default="CartPole-v1")
     parser.add_argument(
         "--method", type=str, default="fedpg-br",
-        choices=["fedpg-br", "svrpg", "gomdp"],
+        choices=["fedpg-br", "svrpg", "gpomdp"],
         help="Aggregation strategy",
     )
     parser.add_argument("--byzantine-ratio", type=float, default=0.0)

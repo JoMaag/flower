@@ -56,7 +56,7 @@ def get_strategies():
         return jsonify({
             "fedpg-br": "Byzantine filtering + SCSG variance reduction",
             "svrpg": "SCSG variance reduction, no Byzantine filtering",
-            "gomdp": "Simple averaging, single gradient step (baseline)",
+            "gpomdp": "Simple averaging, single gradient step (baseline)",
         })
 
 

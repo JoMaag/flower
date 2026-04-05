@@ -322,7 +322,7 @@
                 <select id="method-select" onchange="updateStrategyInfo()">
                     <option value="fedpg-br">FedPG-BR (Byzantine + SCSG)</option>
                     <option value="svrpg">SVRPG (SCSG only)</option>
-                    <option value="gomdp">GOMDP (Simple averaging)</option>
+                    <option value="gpomdp">GPOMDP (Simple averaging)</option>
                     <option value="independent">Independent RL (no federation)</option>
                     <option value="centralized">Centralized (Oracle upper bound)</option>
                 </select>
@@ -536,7 +536,7 @@
         const strategies = {
             'fedpg-br': { name: 'FedPG-BR', desc: 'Byzantine filtering + SCSG variance reduction.', color: '#2563eb' },
             'svrpg': { name: 'SVRPG', desc: 'SCSG variance reduction only. No Byzantine protection.', color: '#d97706' },
-            'gomdp': { name: 'GOMDP', desc: 'Simple gradient averaging. Baseline method.', color: '#16a34a' },
+            'gpomdp': { name: 'GPOMDP', desc: 'Simple gradient averaging. Baseline method.', color: '#16a34a' },
             'independent': { name: 'Independent RL', desc: 'No federation: each worker trains independently, only worker-0 gradient applied.', color: '#0891b2' },
             'centralized': { name: 'Centralized', desc: 'Oracle upper bound: all workers treated as one. No federation overhead.', color: '#475569' },
         };

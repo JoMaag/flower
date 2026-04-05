@@ -1,4 +1,4 @@
-"""GOMDP: simple federated policy gradient — average gradients, single update step."""
+"""GPOMDP: simple federated policy gradient — average gradients, single update step."""
 
 from typing import List, Tuple
 
@@ -7,8 +7,8 @@ import torch
 from frl_benchmark.strategies.base import AggregationStrategy, register_strategy, apply_gradient
 
 
-@register_strategy("gomdp")
-class GOMDP(AggregationStrategy):
+@register_strategy("gpomdp")
+class GPOMDP(AggregationStrategy):
     """Average all worker gradients and take one gradient step."""
 
     description = "Simple averaging, single gradient step (baseline)"

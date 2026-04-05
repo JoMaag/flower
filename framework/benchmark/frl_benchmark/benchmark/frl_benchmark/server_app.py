@@ -52,7 +52,7 @@ class FRLStrategy(Strategy):
     Dispatches to the registered aggregation plugin selected by `method`:
       - 'fedpg-br': Full FedPG-BR (Byzantine filtering + SCSG)
       - 'svrpg': SCSG variance reduction only (no Byzantine filtering)
-      - 'gomdp': Simple averaging (no SCSG, no filtering)
+      - 'gpomdp': Simple averaging (no SCSG, no filtering)
     """
 
     def __init__(self, env_name: str, num_agents: int, byzantine_ratio: float = 0.0,
@@ -276,7 +276,7 @@ def server_fn(context: Context):
     num_workers = int(run_config.get("num-workers", 10))
     num_byzantine = int(run_config.get("num-byzantine", 0))
     use_frl_benchmark = bool(run_config.get("use-fedpg-br", False))
-    method = str(run_config.get("method", "fedpg-br" if use_frl_benchmark else "gomdp"))
+    method = str(run_config.get("method", "fedpg-br" if use_frl_benchmark else "gpomdp"))
     # Override config with dashboard-provided advanced settings
     cfg = get_config(env_name)
     if int(run_config.get("batch-size", 0)) > 0:

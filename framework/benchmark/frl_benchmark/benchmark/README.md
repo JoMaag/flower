@@ -66,7 +66,7 @@ Five strategies are implemented, covering the full range from non-federated base
 |-------------|-----------|----------------|-------------|-----------------|
 | Independent | No        | No             | No          | Lower bound     |
 | Centralized | No        | No             | No          | Upper bound     |
-| GOMDP       | Yes       | No             | No          | Vanilla baseline|
+| GPOMDP       | Yes       | No             | No          | Vanilla baseline|
 | SVRPG       | Yes       | SCSG           | No          | Trusted agents  |
 | FedPG-BR    | Yes       | SCSG           | Yes         | Byzantine agents|
 
@@ -75,7 +75,7 @@ Select a strategy via the `method` key in your config:
 ```toml
 method = "independent"
 method = "centralized"
-method = "gomdp"
+method = "gpomdp"
 method = "svrpg"
 method = "fedpg-br"
 ```
@@ -127,17 +127,17 @@ Any parameter not specified falls back to per-environment defaults in `config.py
 | `paper_cartpole.toml`           | CartPole-v1     | FedPG-BR    | 312                 |
 | `paper_cartpole_svrpg.toml`     | CartPole-v1     | SVRPG       | 312                 |
 | `compare_independent.toml`      | CartPole-v1     | Independent | 312                 |
-| `compare_fedpg.toml`            | CartPole-v1     | GOMDP       | 312                 |
+| `compare_fedpg.toml`            | CartPole-v1     | GPOMDP       | 312                 |
 | `compare_centralized.toml`      | CartPole-v1     | Centralized | 312                 |
 | `paper_lunarlander.toml`        | LunarLander-v3  | FedPG-BR    | 323                 |
-| `paper_lunarlander_gomdp.toml`  | LunarLander-v3  | GOMDP       | 323                 |
+| `paper_lunarlander_gpomdp.toml`  | LunarLander-v3  | GPOMDP       | 323                 |
 | `pursuit_afedpg.toml`           | Pursuit-v4      | FedPG-BR    | 200                 |
-| `pursuit_fedpg.toml`            | Pursuit-v4      | GOMDP       | 200                 |
+| `pursuit_fedpg.toml`            | Pursuit-v4      | GPOMDP       | 200                 |
 | `byz_afedpg_30pct.toml`         | CartPole-v1     | FedPG-BR    | 350, 30% sign-flip  |
-| `byz_fedpg_30pct.toml`          | CartPole-v1     | GOMDP       | 350, 30% sign-flip  |
+| `byz_fedpg_30pct.toml`          | CartPole-v1     | GPOMDP       | 350, 30% sign-flip  |
 | `byz_svrpg_30pct.toml`          | CartPole-v1     | SVRPG       | 350, 30% sign-flip  |
 | `pursuit_byz_afedpg_30pct.toml` | Pursuit-v4      | FedPG-BR    | 200, 30% sign-flip  |
-| `pursuit_byz_fedpg_30pct.toml`  | Pursuit-v4      | GOMDP       | 200, 30% sign-flip  |
+| `pursuit_byz_fedpg_30pct.toml`  | Pursuit-v4      | GPOMDP       | 200, 30% sign-flip  |
 
 ---
 
@@ -183,7 +183,7 @@ frl_benchmark/
   config.py              # Per-environment hyperparameters (from FedPG-BR paper)
   strategies/            # Plugin aggregation strategies
     base.py              #   Abstract base + decorator registry
-    gomdp.py             #   Simple averaging (GOMDP baseline)
+    gpomdp.py             #   Simple averaging (GPOMDP baseline)
     svrpg.py             #   SCSG variance reduction (SVRPG)
     fedpg_br_strategy.py #   Full FedPG-BR (Byzantine filter + SCSG)
     my_strategy.py       #   Empty template for custom strategies
