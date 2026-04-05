@@ -645,8 +645,13 @@
         function updateStrategyInfo() {
             const method = document.getElementById('method-select').value;
             const info = strategies[method];
-            document.getElementById('strategy-info').innerHTML =
-                `<div class="name">${info.name}</div>${info.desc}`;
+            if (info) {
+                document.getElementById('strategy-info').innerHTML =
+                    `<div class="name">${info.name}</div>${info.desc}`;
+            } else {
+                document.getElementById('strategy-info').innerHTML =
+                    `<div class="name">${method}</div>Custom strategy`;
+            }
         }
 
         function updateWorkers(numWorkers, numByzantine, goodAgents) {
@@ -707,7 +712,8 @@
             document.getElementById('btn-start').disabled = true;
             document.getElementById('btn-stop').disabled = false;
             document.getElementById('status-dot').className = 'status-dot running';
-            document.getElementById('status-text').textContent = `Running ${strategies[config.method].name} on ${config.env}`;
+            const stratLabel = strategies[config.method] ? strategies[config.method].name : config.method;
+            document.getElementById('status-text').textContent = `Running ${stratLabel} on ${config.env}`;
 
             updateWorkers(config.num_workers, config.num_byzantine);
             addLog(`<span class="method">[${config.method.toUpperCase()}]</span> Starting experiment: ${config.env}, K=${config.num_workers}, B=${config.num_byzantine}, rounds=${config.num_rounds}, seed=${config.seed}`);
@@ -862,6 +868,18 @@
                         <span style="color:var(--text-muted)">${desc}</span>
                     </div>`
                 ).join('');
+
+                // Add any strategies not already in the dropdown
+                const select = document.getElementById('method-select');
+                const existing = Array.from(select.options).map(o => o.value);
+                Object.entries(data).forEach(([name, desc]) => {
+                    if (!existing.includes(name)) {
+                        const opt = document.createElement('option');
+                        opt.value = name;
+                        opt.textContent = `${name} (custom)`;
+                        select.appendChild(opt);
+                    }
+                });
             } catch (e) {
                 // Use default list
                 const list = document.getElementById('strategies-list');

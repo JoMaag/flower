@@ -30,30 +30,24 @@ Round t:
 
 ## Quick Start
 
-### Docker (recommended)
+The recommended way to run the benchmark is via Docker, which works identically on macOS, Linux, and Windows.
 
 ```bash
-git clone <this-repo>
-cd frl_benchmark
-
+git clone https://github.com/JoMaag/frl-benchmark
+cd frl-benchmark
 docker compose up --build
 # Dashboard at http://localhost:8050/experiment
 ```
 
 Launch a training run from the dashboard by selecting environment, strategy, number of workers, and Byzantine ratio.
 
-### Local
+### Command line via Docker
+
+To run a configuration file directly without the dashboard:
 
 ```bash
-pip install -e ".[dashboard]"
-frl-dashboard
-# http://localhost:8050/experiment
-```
-
-### Command line
-
-```bash
-flwr run . local-simulation --run-config configs/paper_cartpole.toml
+docker exec -it frl-benchmark flwr run . local-simulation \
+    --run-config configs/paper_cartpole.toml
 ```
 
 ---

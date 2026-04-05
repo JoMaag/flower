@@ -746,7 +746,7 @@ The \texttt{frl\_benchmark.strategies} module exposes several utilities that are
 \chapter{Running an Experiment}
 \label{app:running}
 
-This appendix describes how to start an experiment using the Docker setup and the web dashboard.
+This appendix describes how to start an experiment using Docker, which works identically on macOS, Linux, and Windows.
 
 \section*{Prerequisites}
 
@@ -779,15 +779,37 @@ Navigate to \texttt{http://localhost:8050/experiment} in a browser. The dashboar
 
 Click \textbf{Start Experiment}. Training begins inside a separate Docker container. Live reward curves, per-client status, and round-level statistics are streamed to the dashboard in real time. TensorBoard is available at \texttt{http://localhost:6006} for post-hoc analysis.
 
-\section*{Alternative: Command line}
+\section*{Alternative: Command line via Docker}
 
 To run a specific configuration file directly without the dashboard:
 
 \begin{verbatim}
-flwr run . local-simulation \
+docker exec -it frl-benchmark flwr run . local-simulation \
     --run-config configs/paper_cartpole.toml
 \end{verbatim}
 
 All pre-built configuration files are in the \texttt{configs/} directory.
+
+\section*{Running a custom strategy}
+
+After implementing a custom strategy following the guide in Appendix~\ref{app:custom_strategy}, drop the \texttt{.py} file into \texttt{frl\_benchmark/strategies/} and rebuild. The repository includes \texttt{my\_strategy.py} as an empty template and \texttt{example\_strategy.py} as a worked trimmed-mean example to use as a starting point:
+
+\begin{verbatim}
+cp frl_benchmark/strategies/my_strategy.py \
+   frl_benchmark/strategies/new_super_strategy.py
+\end{verbatim}
+
+Then implement the two methods and rebuild:
+
+\begin{verbatim}
+docker compose up --build
+\end{verbatim}
+
+The strategy will appear automatically in the dashboard dropdown. Select it and click \textbf{Start Experiment}, or run it from the command line:
+
+\begin{verbatim}
+docker exec -it frl-benchmark flwr run . local-simulation \
+    --run-config "method=\"my-strategy\""
+\end{verbatim}
 
 \end{document}

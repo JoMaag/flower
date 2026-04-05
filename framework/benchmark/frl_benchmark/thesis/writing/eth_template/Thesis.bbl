@@ -7,8 +7,7 @@
 \providecommand{\BIBentrySTDinterwordspacing}{\spaceskip=0pt\relax}
 \providecommand{\BIBentryALTinterwordstretchfactor}{4}
 \providecommand{\BIBentryALTinterwordspacing}{\spaceskip=\fontdimen2\font plus
-\BIBentryALTinterwordstretchfactor\fontdimen3\font minus
-  \fontdimen4\font\relax}
+\BIBentryALTinterwordstretchfactor\fontdimen3\font minus \fontdimen4\font\relax}
 \providecommand{\BIBforeignlanguage}[2]{{%
 \expandafter\ifx\csname l@#1\endcsname\relax
 \typeout{** WARNING: IEEEtran.bst: No hyphenation pattern has been}%
@@ -22,80 +21,45 @@
 \BIBdecl
 
 \bibitem{FLsurvey}
-P.~Kairouz, H.~B. McMahan, B.~Avent, A.~Bellet, M.~Bennis, A.~N. Bhagoji,
-  K.~Bonawitz, Z.~Charles, G.~Cormode, R.~Cummings \emph{et~al.}, ``Advances
-  and open problems in federated learning,'' \emph{arXiv:1912.04977}, 2019.
+P.~Kairouz, H.~B. McMahan, B.~Avent, A.~Bellet, M.~Bennis, A.~N. Bhagoji, K.~Bonawitz, Z.~Charles, G.~Cormode, R.~Cummings \emph{et~al.}, ``Advances and open problems in federated learning,'' \emph{arXiv:1912.04977}, 2019.
 
 \bibitem{OpenAIGym}
-G.~Brockman, V.~Cheung, L.~Pettersson, J.~Schneider, J.~Schulman, J.~Tang, and
-  W.~Zaremba, ``{OpenAI Gym},'' 2016.
+G.~Brockman, V.~Cheung, L.~Pettersson, J.~Schneider, J.~Schulman, J.~Tang, and W.~Zaremba, ``{OpenAI Gym},'' 2016.
 
 \bibitem{SuttonBarto}
-R.~S. Sutton and A.~G. Barto, \emph{Reinforcement Learning: An
-  Introduction}.\hskip 1em plus 0.5em minus 0.4em\relax MIT Press, 2018.
+R.~S. Sutton and A.~G. Barto, \emph{Reinforcement Learning: An Introduction}.\hskip 1em plus 0.5em minus 0.4em\relax MIT Press, 2018.
 
 \bibitem{REINFORCE}
-R.~J. Williams, ``Simple statistical gradient-following algorithms for
-  connectionist reinforcement learning,'' \emph{Machine Learning}, vol.~8, no.
-  3--4, pp. 229--256, 1992.
+R.~J. Williams, ``Simple statistical gradient-following algorithms for connectionist reinforcement learning,'' \emph{Machine Learning}, vol.~8, no. 3--4, pp. 229--256, 1992.
 
 \bibitem{SVRPG}
-M.~Papini, D.~Binaghi, G.~Canonaco, M.~Pirotta, and M.~Restelli, ``Stochastic
-  variance-reduced policy gradient,'' in \emph{International Conference on
-  Machine Learning (ICML)}, 2018.
+M.~Papini, D.~Binaghi, G.~Canonaco, M.~Pirotta, and M.~Restelli, ``Stochastic variance-reduced policy gradient,'' in \emph{International Conference on Machine Learning (ICML)}, 2018.
 
 \bibitem{FedAvg}
-H.~B. McMahan, E.~Moore, D.~Ramage, S.~Hampson, and B.~A. y~Arcas,
-  ``Communication-efficient learning of deep networks from decentralized
-  data,'' \emph{arXiv:1602.05629}, 2017.
+H.~B. McMahan, E.~Moore, D.~Ramage, S.~Hampson, and B.~A. y~Arcas, ``Communication-efficient learning of deep networks from decentralized data,'' \emph{arXiv:1602.05629}, 2017.
 
 \bibitem{ByzantineGenerals}
-L.~Lamport, R.~Shostak, and M.~Pease, ``The byzantine generals problem,''
-  \emph{ACM Transactions on Programming Languages and Systems}, vol.~4, no.~3,
-  pp. 382--401, 1982.
+L.~Lamport, R.~Shostak, and M.~Pease, ``The byzantine generals problem,'' \emph{ACM Transactions on Programming Languages and Systems}, vol.~4, no.~3, pp. 382--401, 1982.
 
 \bibitem{Krum}
-P.~Blanchard, E.~M.~E. Mhamdi, R.~Guerraoui, and J.~Stainer, ``Machine learning
-  with adversaries: Byzantine tolerant gradient descent,'' in \emph{Advances in
-  Neural Information Processing Systems (NeurIPS)}, 2017, pp. 118--128.
+P.~Blanchard, E.~M.~E. Mhamdi, R.~Guerraoui, and J.~Stainer, ``Machine learning with adversaries: Byzantine tolerant gradient descent,'' in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2017, pp. 118--128.
 
 \bibitem{FedPGBR}
-F.~X. Fan, Y.~Ma, Z.~Dai, W.~Jing, C.~Tan, and B.~K.~H. Low, ``Fault-tolerant
-  federated reinforcement learning with theoretical guarantee,'' in
-  \emph{Advances in Neural Information Processing Systems (NeurIPS)}, vol.~34,
-  2021.
+F.~X. Fan, Y.~Ma, Z.~Dai, W.~Jing, C.~Tan, and B.~K.~H. Low, ``Fault-tolerant federated reinforcement learning with theoretical guarantee,'' in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, vol.~34, 2021.
 
 \bibitem{GPOMDP}
-J.~Baxter and P.~L. Bartlett, ``Infinite-horizon policy-gradient estimation,''
-  \emph{Journal of Artificial Intelligence Research}, vol.~15, pp. 319--350,
-  2001.
+J.~Baxter and P.~L. Bartlett, ``Infinite-horizon policy-gradient estimation,'' \emph{Journal of Artificial Intelligence Research}, vol.~15, pp. 319--350, 2001.
 
 \bibitem{Flower}
-D.~J. Beutel, T.~Topal, A.~Mathur, X.~Qiu, J.~Fernandez-Marques, Y.~Gao,
-  L.~Sani, K.~H. Li, T.~Parcollet, P.~P.~B. de~Gusm{\~a}o, and N.~D. Lane,
-  ``Flower: A friendly federated learning framework,'' \emph{arXiv:2007.14390},
-  2022.
+D.~J. Beutel, T.~Topal, A.~Mathur, X.~Qiu, J.~Fernandez-Marques, Y.~Gao, L.~Sani, K.~H. Li, T.~Parcollet, P.~P.~B. de~Gusm{\~a}o, and N.~D. Lane, ``Flower: A friendly federated learning framework,'' \emph{arXiv:2007.14390}, 2022.
 
 \bibitem{PettingZoo}
-J.~K. Terry, B.~Black, N.~Grammel, M.~Jayakumar, A.~Hari, R.~Sullivan, L.~S.
-  Santos, R.~Perez, C.~Horsch, C.~Dieffendaller, N.~Williams, Y.~Lokesh,
-  R.~Ramos, and P.~Nair, ``{PettingZoo}: Gym for multi-agent reinforcement
-  learning,'' in \emph{Advances in Neural Information Processing Systems
-  (NeurIPS)}, 2021.
+J.~K. Terry, B.~Black, N.~Grammel, M.~Jayakumar, A.~Hari, R.~Sullivan, L.~S. Santos, R.~Perez, C.~Horsch, C.~Dieffendaller, N.~Williams, Y.~Lokesh, R.~Ramos, and P.~Nair, ``{PettingZoo}: Gym for multi-agent reinforcement learning,'' in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2021.
 
 \bibitem{TensorBoard}
-M.~Abadi, A.~Agarwal, P.~Barham, E.~Brevdo, Z.~Chen, C.~Citro, G.~S. Corrado,
-  A.~Davis, J.~Dean, M.~Devin, S.~Ghemawat, I.~Goodfellow, A.~Harp, G.~Irving,
-  M.~Isard, Y.~Jia, R.~Jozefowicz, L.~Kaiser, M.~Kudlur, J.~Levenberg,
-  D.~Man\'{e}, R.~Monga, S.~Moore, D.~Murray, C.~Olah, M.~Schuster, J.~Shlens,
-  B.~Steiner, I.~Sutskever, K.~Talwar, P.~Tucker, V.~Vanhoucke, V.~Vasudevan,
-  F.~Vi\'{e}gas, O.~Vinyals, P.~Warden, M.~Wattenberg, M.~Wicke, Y.~Yu, and
-  X.~Zheng, ``{TensorFlow}: Large-scale machine learning on heterogeneous
-  systems,'' 2015, software available from tensorflow.org.
+M.~Abadi, A.~Agarwal, P.~Barham, E.~Brevdo, Z.~Chen, C.~Citro, G.~S. Corrado, A.~Davis, J.~Dean, M.~Devin, S.~Ghemawat, I.~Goodfellow, A.~Harp, G.~Irving, M.~Isard, Y.~Jia, R.~Jozefowicz, L.~Kaiser, M.~Kudlur, J.~Levenberg, D.~Man\'{e}, R.~Monga, S.~Moore, D.~Murray, C.~Olah, M.~Schuster, J.~Shlens, B.~Steiner, I.~Sutskever, K.~Talwar, P.~Tucker, V.~Vanhoucke, V.~Vasudevan, F.~Vi\'{e}gas, O.~Vinyals, P.~Warden, M.~Wattenberg, M.~Wicke, Y.~Yu, and X.~Zheng, ``{TensorFlow}: Large-scale machine learning on heterogeneous systems,'' 2015, software available from tensorflow.org.
 
 \bibitem{FRLBenchmark}
-J.~Maag, ``{Flower FRL Benchmark}: A benchmarking framework for federated
-  reinforcement learning,'' 2025, available at
-  \url{https://github.com/JoMaag/frl-benchmark}.
+J.~Maag, ``{Flower FRL Benchmark}: A benchmarking framework for federated reinforcement learning,'' 2025, available at \url{https://github.com/JoMaag/frl-benchmark}.
 
 \end{thebibliography}
